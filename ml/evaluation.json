@@ -5,13 +5,13 @@
   "start_utc": "2015-08-10T00:00:00",
   "holdout_start_utc": "2018-09-18T00:00:00",
   "end_utc": "2019-09-17T18:00:00",
-  "train_rows": 75500,
-  "test_rows": 24100,
-  "positive_rate": 0.13796680497925312,
-  "roc_auc": 0.990045489174199,
-  "average_precision": 0.9502094717837286,
-  "brier": 0.02596886834519631,
-  "persistence_brier": 0.07589211618257262,
+  "train_rows": 75400,
+  "test_rows": 24150,
+  "positive_rate": 0.13834368530020705,
+  "roc_auc": 0.9903627251056051,
+  "average_precision": 0.9511447688342407,
+  "brier": 0.025807912564027882,
+  "persistence_brier": 0.07573498964803313,
   "features": [
     "temperature_c",
     "threshold_c",
@@ -21,6 +21,7 @@
     "season_sin",
     "season_cos",
     "hour_sin",
-    "hour_cos"
+    "hour_cos",
+    "prior_24h_crossings_6h_samples"
   ]
 }
