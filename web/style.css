@@ -331,3 +331,227 @@ dialog::backdrop {
     padding: 24px 4vw;
   }
 }
+
+.portfolio-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 30px 34px;
+  border-radius: 15px;
+  background:
+    linear-gradient(95deg, #142f26 20%, #203c30e6 54%, #203c3040),
+    url(/plains.jpg) right 40% / cover;
+  color: #fff;
+}
+.portfolio-hero h1 {
+  font-size: clamp(32px, 4vw, 50px);
+  margin: 0 0 8px;
+}
+.portfolio-hero p {
+  margin: 0;
+  color: #e3eee2;
+}
+.portfolio-hero button {
+  flex: none;
+  font-weight: 600;
+}
+.portfolio-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+.metric {
+  padding: 15px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  border: 1px solid #d1d9cd;
+  border-radius: 9px;
+}
+.metric b {
+  font-size: 29px;
+  font-variant-numeric: tabular-nums;
+}
+.metric[aria-pressed="true"] {
+  background: #e4ecdf;
+  border-color: #5e795f;
+}
+.portfolio-board {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.map-panel .map {
+  height: 290px;
+}
+.legend {
+  display: flex;
+  gap: 13px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #40594c;
+  margin: 12px 0 0;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+.queue #queue {
+  max-height: 310px;
+  overflow: auto;
+}
+.queue-row {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-top: 1px solid #dce0d5;
+  border-radius: 0;
+  display: grid;
+  gap: 6px;
+  padding: 12px 3px;
+}
+.queue-row strong {
+  font-size: 16px;
+}
+.queue-row span {
+  color: #38664a;
+  font-size: 13px;
+}
+.directory-filters {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 155px 150px auto;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+.directory-head,
+.directory-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(
+      0,
+      0.8fr
+    ) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.directory-head {
+  padding: 9px 12px;
+  background: #f0f3ec;
+  font-size: 12px;
+  color: #455a4e;
+}
+.directory-row {
+  width: 100%;
+  background: transparent;
+  text-align: left;
+  padding: 13px 12px;
+  border: 0;
+  border-bottom: 1px solid #dce0d5;
+  border-radius: 0;
+}
+.directory-row small {
+  margin-top: 3px;
+}
+.directory-row span,
+.queue-row strong,
+.evidence {
+  overflow-wrap: anywhere;
+}
+.risk-cell,
+.date-cell {
+  font-size: 13px;
+}
+.status-chip {
+  display: inline-block;
+  border-radius: 20px;
+  color: #3b5043;
+  background: #edf0eb;
+  font-size: 12px;
+  padding: 4px 9px;
+}
+.status-chip[data-state="Critical"] {
+  background: #fce1db;
+  color: #802e20;
+}
+.status-chip[data-state="Flagged"] {
+  background: #f9e9cf;
+  color: #77501e;
+}
+.status-chip[data-state="Compliant"] {
+  background: #ddeddf;
+  color: #2e5137;
+}
+.empty-directory {
+  padding: 22px 12px;
+  color: #526457;
+}
+.back-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-bottom: 12px;
+  color: #44604d;
+}
+.evidence:focus {
+  outline: 2px solid #5a7963;
+  outline-offset: 3px;
+}
+.evidence strong {
+  display: block;
+  margin-top: 5px;
+}
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+@media (max-width: 760px) {
+  .portfolio-board {
+    grid-template-columns: 1fr;
+  }
+  .portfolio-counts {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .portfolio-hero {
+    padding: 22px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .directory-filters {
+    grid-template-columns: 1fr 1fr;
+  }
+  .directory-filters input {
+    grid-column: 1/-1;
+  }
+  .directory-head {
+    display: none;
+  }
+  .directory-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .risk-cell:before {
+    content: "Heat risk · ";
+  }
+  .date-cell:before {
+    content: "Reading · ";
+  }
+  .map-panel .map {
+    height: 245px;
+  }
+  .metric {
+    padding: 12px;
+  }
+  .panel {
+    padding: 16px;
+  }
+}

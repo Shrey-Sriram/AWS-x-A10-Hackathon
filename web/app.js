@@ -84,6 +84,8 @@ function modal(html) {
 $("close").onclick = () => $("dialog").close();
 function auth(signup = false) {
   current = null;
+  query = filter = level = "";
+  portfolioMode = "all";
   $("nav").hidden = true;
   screen(
     '<section class="auth"><figure><figcaption>Southern Great Plains · NASA Terra / MODIS · June 2024</figcaption></figure><article><h1>Parcel intelligence</h1><p class="muted">Monitor lease obligations and environmental conditions across your land portfolio.</p><form id="auth"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" minlength="10" autocomplete="' +
@@ -148,7 +150,10 @@ function initMap(id, items, heat = true) {
           .createTextNode(p.name)
           .textContent.replace(/[&<>]/g, (c) => esc(c)),
       );
-    if (p.id) group.on("click", () => detail(p));
+    if (p.id)
+      group.on("click", () =>
+        detail(parcels.find((parcel) => parcel.id === p.id) || p),
+      );
     bounds.extend(group.getBounds());
     for (const l of p.layers || [])
       L.geoJSON(l.geometry, {
@@ -159,98 +164,6 @@ function initMap(id, items, heat = true) {
   }
   if (bounds.isValid()) m.fitBounds(bounds, { padding: [22, 22], maxZoom: 15 });
   return m;
-}
-function portfolio() {
-  current = null;
-  screen(
-    '<div class="bar"><div><h1>Land portfolio</h1><span class="muted">Parcel operations and compliance</span></div><button id="new" class="primary">Add parcel</button></div><section class="stats">' +
-      [
-        ["Parcels", parcels.length],
-        [
-          "Open violations",
-          parcels.flatMap((p) => p.events).filter((e) => !e.resolved).length,
-        ],
-        ["High heat risk", parcels.filter((p) => risk(p) === "High").length],
-      ]
-        .map(
-          ([k, v]) =>
-            '<div class="stat"><small>' + k + "</small><b>" + v + "</b></div>",
-        )
-        .join("") +
-      '</section><section class="board"><div class="panel"><h2>Parcels</h2><div class="filters stack"><input id="search" placeholder="Search parcels, companies or dates" aria-label="Search parcels"><div class="split"><select id="status" aria-label="Status filter"><option value="">All statuses</option>' +
-      ["Unassessed", "Awaiting readings", "Compliant", "Flagged", "Critical"]
-        .map((x) => "<option>" + x + "</option>")
-        .join("") +
-      '</select><select id="riskFilter" aria-label="Risk filter"><option value="">All risk levels</option>' +
-      ["High", "Medium", "Low", "Unknown"]
-        .map((x) => "<option>" + x + "</option>")
-        .join("") +
-      '</select></div></div><div id="list"></div></div><div class="panel"><h2>Risk map</h2><div id="map" class="map"></div><small>Heat risk: green low, amber medium, red high, gray unassessed. Dashed outlines mark buffers.</small></div></section>',
-  );
-  $("new").onclick = newParcel;
-  $("search").value = query;
-  $("status").value = filter;
-  $("riskFilter").value = level;
-  function draw() {
-    const visible = parcels.filter(
-      (p) =>
-        [
-          p.name,
-          p.company,
-          p.stage,
-          p.renewal,
-          p.favorite ? "starred" : "",
-          String(p.acres ?? ""),
-        ]
-          .join(" ")
-          .toLowerCase()
-          .includes(query.toLowerCase()) &&
-        (!filter || p.status === filter) &&
-        (!level || risk(p) === level),
-    );
-    $("list").innerHTML =
-      visible
-        .map(
-          (p) =>
-            '<button class="row" data-id="' +
-            p.id +
-            '"><strong>' +
-            esc(p.name) +
-            "</strong><small>" +
-            esc(p.status) +
-            " · " +
-            risk(p) +
-            " heat risk</small></button>",
-        )
-        .join("") ||
-      '<p class="muted">' +
-        (parcels.length
-          ? "No parcels match these filters."
-          : "Add your first parcel to start monitoring.") +
-        "</p>";
-    $("list")
-      .querySelectorAll("button")
-      .forEach(
-        (b) =>
-          (b.onclick = () =>
-            detail(parcels.find((p) => p.id === b.dataset.id))),
-      );
-    if (map) map.remove();
-    map = initMap("map", visible);
-  }
-  $("search").oninput = (e) => {
-    query = e.target.value;
-    draw();
-  };
-  $("status").onchange = (e) => {
-    filter = e.target.value;
-    draw();
-  };
-  $("riskFilter").onchange = (e) => {
-    level = e.target.value;
-    draw();
-  };
-  draw();
 }
 function newParcel() {
   modal(
@@ -305,11 +218,12 @@ function newParcel() {
 }
 const item = (s) => '<div class="item">' + s + "</div>";
 function detail(p) {
+  if (current !== p.id) window.scrollTo(0, 0);
   current = p.id;
   const path = "parcels/" + p.id + "/";
   const reports = ["weekly", "violations", "scorecard", "geojson", "heatmap"];
   screen(
-    '<div class="bar"><div><small>Parcel overview</small><h1>' +
+    '<div class="bar"><div><button id="backPortfolio" class="back-link">← Land portfolio</button><h1>' +
       esc(p.name) +
       "</h1><small>" +
       [
@@ -391,33 +305,12 @@ function detail(p) {
           ),
         )
         .join("") +
-      '</article><article class="panel"><h2>Violation log</h2>' +
+      '</article><article id="violations" class="panel"><h2>Violation log</h2>' +
+      (p.events.length ? "" : "<small>No violations recorded.</small>") +
       p.events
         .slice()
         .reverse()
-        .map((e) =>
-          item(
-            "<strong>" +
-              esc(e.rule.clause) +
-              "</strong><p>" +
-              esc(e.action) +
-              "</p><small>" +
-              esc(e.time) +
-              " · " +
-              esc(e.source) +
-              " · " +
-              e.value +
-              "</small>" +
-              (e.image
-                ? '<img class="photo" src="' +
-                  e.image +
-                  '" alt="Changed pixels highlighted">'
-                : "") +
-              (e.resolved
-                ? "<small>Resolved · " + esc(e.resolution) + "</small>"
-                : '<button data-resolve="' + e.id + '">Resolve</button>'),
-          ),
-        )
+        .map((e) => eventEvidence(e, p))
         .join("") +
       '</article><article class="panel"><div class="bar"><h2>Satellite & aerial imagery</h2><button id="images">Compare images</button></div><button id="sat">Load satellite comparison</button>' +
       (p.latest_image
@@ -459,9 +352,16 @@ function detail(p) {
         .join("") +
       "</div></article></section>",
   );
+  $("backPortfolio").onclick = portfolio;
   map = initMap("map", [p]);
   $("refresh").onclick = run(async () => {
-    await api(path + "refresh", {});
+    const control = $("refresh");
+    control.textContent = "Refreshing…";
+    try {
+      await api(path + "refresh", {});
+    } finally {
+      control.textContent = "Refresh sensors";
+    }
     await load(p.id);
     notice("Sensor readings updated");
   });
@@ -633,10 +533,21 @@ $("support").onclick = () => {
   });
 };
 setInterval(() => {
-  if (current && !$("dialog").open && !document.hidden) {
+  if (!$("nav").hidden && !$("dialog").open && !document.hidden) {
     const id = current;
     api("parcels")
       .then((rows) => {
+        if ($("nav").hidden || current !== id || $("dialog").open) return;
+        if (!id) {
+          if (
+            redrawPortfolio &&
+            JSON.stringify(rows) !== JSON.stringify(parcels)
+          ) {
+            parcels = rows;
+            redrawPortfolio();
+          }
+          return;
+        }
         const old = parcels.find((p) => p.id === id),
           next = rows.find((p) => p.id === id);
         if (
