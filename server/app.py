@@ -159,13 +159,18 @@ class Rule(BaseModel):
     lease_ref: str = Field(default="", max_length=400)
 
 
-class Parcel(BaseModel):
+class LeaseDetails(BaseModel):
+    company: str = Field(default="", max_length=200)
+    renewal: str = Field(default="", pattern=r"^(?:\d{4}-\d{2}-\d{2})?$")
+    stage: Literal["Draft", "In review", "Signed", "Expired"] = "Draft"
+    favorite: bool = False
+
+
+class Parcel(LeaseDetails):
     name: str = Field(min_length=1, max_length=120)
     geometry: dict
     layers: list[dict] = Field(default_factory=list, max_length=32)
     buffer_m: float = Field(default=0, ge=0, le=10000)
-    renewal: str = ""
-    company: str = ""
 
 
 def get(db, pid, email):
@@ -202,7 +207,11 @@ def parcels(email=Depends(user)):
 @app.post("/api/parcels")
 def create(body: Parcel, email=Depends(user)):
     try:
+        from pyproj import Geod
+        from shapely import orient_polygons
+
         g = geometry(body.geometry)
+        area, _ = Geod(ellps="WGS84").geometry_area_perimeter(orient_polygons(shape(g)))
         layers = [
             dict(
                 label=str(layer.get("label", "Land use")),
@@ -215,6 +224,7 @@ def create(body: Parcel, email=Depends(user)):
             id=uuid4().hex,
             geometry=g,
             layers=layers,
+            acres=round(abs(area) / 4046.8564224, 2),
             buffer=buffer_zone(g, body.buffer_m) if body.buffer_m else None,
             rules=[],
             leases=[],
@@ -247,6 +257,13 @@ def map_file(file: UploadFile, email=Depends(user)):
         raise HTTPException(
             422, "Unable to read polygons from this GeoJSON or KML file"
         )
+
+
+@app.post("/api/parcels/{pid}/details")
+def lease_details(pid: str, body: LeaseDetails, email=Depends(user)):
+    with edit(pid, email) as p:
+        p.update(body.model_dump())
+    return p
 
 
 @app.post("/api/parcels/{pid}/leases")

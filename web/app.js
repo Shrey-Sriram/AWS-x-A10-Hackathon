@@ -177,7 +177,7 @@ function portfolio() {
             '<div class="stat"><small>' + k + "</small><b>" + v + "</b></div>",
         )
         .join("") +
-      '</section><section class="board"><div class="panel"><h2>Parcels</h2><div class="filters stack"><input id="search" placeholder="Search parcels" aria-label="Search parcels"><div class="split"><select id="status" aria-label="Status filter"><option value="">All statuses</option>' +
+      '</section><section class="board"><div class="panel"><h2>Parcels</h2><div class="filters stack"><input id="search" placeholder="Search parcels, companies or dates" aria-label="Search parcels"><div class="split"><select id="status" aria-label="Status filter"><option value="">All statuses</option>' +
       ["Unassessed", "Awaiting readings", "Compliant", "Flagged", "Critical"]
         .map((x) => "<option>" + x + "</option>")
         .join("") +
@@ -194,7 +194,17 @@ function portfolio() {
   function draw() {
     const visible = parcels.filter(
       (p) =>
-        p.name.toLowerCase().includes(query.toLowerCase()) &&
+        [
+          p.name,
+          p.company,
+          p.stage,
+          p.renewal,
+          p.favorite ? "starred" : "",
+          String(p.acres ?? ""),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(query.toLowerCase()) &&
         (!filter || p.status === filter) &&
         (!level || risk(p) === level),
     );
@@ -302,10 +312,18 @@ function detail(p) {
     '<div class="bar"><div><small>Parcel overview</small><h1>' +
       esc(p.name) +
       "</h1><small>" +
-      esc(p.company) +
+      [
+        p.company,
+        p.stage,
+        p.acres != null ? p.acres + " acres" : "",
+        p.favorite ? "★ Starred" : "",
+      ]
+        .filter(Boolean)
+        .map(esc)
+        .join(" · ") +
       '</small><span class="pill">' +
       esc(p.status) +
-      '</span></div><button id="refresh" class="primary">Refresh sensors</button></div><div class="stats">' +
+      '</span></div><div class="actions"><button id="details">Edit lease details</button><button id="refresh" class="primary">Refresh sensors</button></div></div><div class="stats">' +
       [
         [
           "72-hour heat risk",
@@ -461,6 +479,29 @@ function detail(p) {
       await load(p.id);
     });
   }
+  $("details").onclick = () =>
+    form(
+      "Lease details",
+      '<label>Company<input name="company" value="' +
+        esc(p.company) +
+        '"></label><label>Contract status<select name="stage">' +
+        ["Draft", "In review", "Signed", "Expired"]
+          .map(
+            (stage) =>
+              "<option " +
+              (stage === p.stage ? "selected" : "") +
+              ">" +
+              stage +
+              "</option>",
+          )
+          .join("") +
+        '</select></label><label>Renewal date<input type="date" name="renewal" value="' +
+        esc(p.renewal) +
+        '"></label><label>Portfolio bookmark<select name="favorite"><option value="false">Unstarred</option><option value="true" ' +
+        (p.favorite ? "selected" : "") +
+        ">Starred</option></select></label>",
+      (fd) => api(path + "details", Object.fromEntries(fd)),
+    );
   $("upload").onclick = () =>
     form(
       "Upload lease",
