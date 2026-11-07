@@ -40,7 +40,7 @@ def train():
     with ThreadPoolExecutor(max_workers=6) as pool:
         temps = np.concatenate(list(pool.map(chunk, range(START, STOP))))
     rows, labels, split, persistence = [], [], [], []
-    for t in range(0, len(temps)-12, 4):
+    for t in range(0, len(temps)-12, 3):
         cutoff = len(temps)-1460
         if cutoff-12 <= t < cutoff:
             continue

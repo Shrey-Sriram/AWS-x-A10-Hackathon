@@ -1,4 +1,5 @@
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
+import threading
 from datetime import datetime, timedelta, timezone
 from hashlib import pbkdf2_hmac, sha256
 from hmac import compare_digest
@@ -20,7 +21,20 @@ from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 from .domain import SIGNALS, buffer_zone, extract, geometry, heat_risk, image_change, import_map
 
-app=FastAPI(title="LeaseSense")
+@asynccontextmanager
+async def lifespan(app):
+    from .monitor import loop
+    stop=threading.Event()
+    worker=threading.Thread(target=loop,args=(stop,),daemon=True)
+    if os.environ.get("LEASESENSE_MONITOR","1")=="1":
+        worker.start()
+    try:
+        yield
+    finally:
+        stop.set()
+
+
+app=FastAPI(title="LeaseSense",lifespan=lifespan)
 DB=Path(os.environ.get("LEASESENSE_DB","data/leasesense.sqlite"))
 DB.parent.mkdir(exist_ok=True,parents=True)
 with sqlite3.connect(DB) as conn:
@@ -222,7 +236,8 @@ def observe(p,when,values,source,image=None):
     if "temperature" in values:
         p["risk"]=heat_risk(p,obs)
     active=sum(not e["resolved"] for e in p["events"])
-    covered={k for o in p["observations"] if o["time"]>=when[:10] for k in o["values"]}
+    latest=max(datetime.fromisoformat(o["time"]) for o in p["observations"])
+    covered={k for o in p["observations"] if datetime.fromisoformat(o["time"])>=latest-timedelta(days=1) for k in o["values"]}
     p["status"]="Critical" if active>1 else "Flagged" if active else "Compliant" if p["rules"] and all(r["metric"] in covered for r in p["rules"]) else "Unassessed"
 
 
@@ -252,7 +267,7 @@ def refresh(pid:str,email=Depends(user)):
     with database() as db:
         point=shape(get(db,pid,email)["geometry"]).centroid
     loc=dict(latitude=point.y,longitude=point.x,timezone="GMT")
-    weather=feed("https://api.open-meteo.com/v1/forecast",dict(**loc,current="temperature_2m,wind_speed_10m",hourly="soil_moisture_0_to_1cm",forecast_days=1))
+    weather=feed("https://api.open-meteo.com/v1/forecast",dict(**loc,current="temperature_2m,wind_speed_10m",hourly="soil_moisture_0_to_1cm,soil_moisture_1_to_3cm,soil_moisture_3_to_9cm,precipitation",past_days=1,forecast_days=1))
     air_error=None
     try:
         air=feed("https://air-quality-api.open-meteo.com/v1/air-quality",dict(**loc,current="pm2_5"))["current"]
@@ -266,9 +281,15 @@ def refresh(pid:str,email=Depends(user)):
         values={"temperature":current["temperature_2m"],"wind":current["wind_speed_10m"]}
         observe(p,current["time"]+"+00:00",{k:v for k,v in values.items() if v is not None},"Open-Meteo weather")
         if hour in hourly["time"]:
-            soil=hourly["soil_moisture_0_to_1cm"][hourly["time"].index(hour)]
+            index=hourly["time"].index(hour)
+            depths=[hourly[k][index] for k in ("soil_moisture_0_to_1cm","soil_moisture_1_to_3cm","soil_moisture_3_to_9cm")]
+            soil=None if None in depths else (depths[0]+2*depths[1]+4*depths[2])/7
             if soil is not None:
-                observe(p,hour+"+00:00",{"soil_moisture":soil},"Open-Meteo soil")
+                observe(p,hour+"+00:00",{"soil_moisture":round(soil,4)},"Open-Meteo soil (0–7 cm estimate)")
+                rain=hourly["precipitation"][index-23:index+1]
+                if values["temperature"] is not None and len(rain)==24 and None not in rain:
+                    from .forecast import soil_outlook
+                    p["outlook"]=soil_outlook(p,values["temperature"],soil,sum(rain),point,datetime.fromisoformat(hour))
         if air.get("pm2_5") is not None:
             observe(p,air["time"]+"+00:00",{"pm25":air["pm2_5"]},"Open-Meteo air")
         p["feed_notice"]=air_error
@@ -285,6 +306,23 @@ def images(pid:str,before:UploadFile,after:UploadFile,email=Depends(user)):
         evidence="data:image/jpeg;base64,"+base64.b64encode(img).decode()
         p["latest_image"]=evidence
         observe(p,now().isoformat(),{"change":pct},"Uploaded aligned imagery",evidence)
+    return p
+
+
+@app.post("/api/parcels/{pid}/satellite")
+def satellite(pid:str,email=Depends(user)):
+    from .satellite import compare
+    with database() as db:
+        geom=get(db,pid,email)["geometry"]
+    day=now().date()-timedelta(days=2)
+    try:
+        percent,img,metadata=compare(geom,day)
+    except (ValueError,OSError,requests.RequestException) as exc:
+        raise HTTPException(502,"Satellite comparison unavailable") from exc
+    with edit(pid,email) as p:
+        evidence="data:image/jpeg;base64,"+base64.b64encode(img).decode()
+        p.update(latest_image=evidence,satellite=metadata)
+        observe(p,day.isoformat()+"T00:00:00+00:00",{"change":percent},metadata["provider"],evidence)
     return p
 
 

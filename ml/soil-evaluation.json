@@ -1,0 +1,44 @@
+{
+  "source": "https://archive-api.open-meteo.com/v1/archive",
+  "model": "ERA5-Land topsoil and temperature, ERA5 precipitation",
+  "sites": [
+    [
+      35,
+      -99
+    ],
+    [
+      32,
+      -101
+    ],
+    [
+      39,
+      -98
+    ],
+    [
+      41,
+      -96
+    ],
+    [
+      36,
+      -119
+    ],
+    [
+      38,
+      -105
+    ]
+  ],
+  "train": "2019\u20132022",
+  "holdout": "2023",
+  "train_rows": 34848,
+  "test_rows": 8592,
+  "soil_threshold": {
+    "positive_rate": 0.2981843575418994,
+    "average_precision": 0.9551648472600385,
+    "brier": 0.05101503231683701
+  },
+  "heavy_rain_screen": {
+    "positive_rate": 0.06052141527001862,
+    "average_precision": 0.08145357046611253,
+    "brier": 0.06089312830684124
+  }
+}
