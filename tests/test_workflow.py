@@ -160,7 +160,7 @@ class ParcelWorkflow(unittest.TestCase):
             ]
         )
 
-    def test_bedrock_image_and_access(self):
+    def test_sagemaker_image_and_access(self):
         import base64
         import json
         from uuid import uuid4
@@ -170,29 +170,24 @@ class ParcelWorkflow(unittest.TestCase):
         encoded = base64.b64encode(raw.getvalue()).decode()
         payload = dict(
             kind="concept",
-            model="ultra",
             aspect_ratio="1:1",
             prompt="An orchard",
             request_id=str(uuid4()),
         )
-        with patch("server.bedrock.client") as runtime:
-            inv = runtime.return_value.invoke_model
+        with patch("server.sagemaker.client") as runtime:
+            inv = runtime.return_value.invoke_endpoint
             inv.return_value = {
-                "body": BytesIO(
-                    json.dumps(
-                        {"images": [encoded], "seeds": [42], "finish_reasons": [None]}
-                    ).encode()
-                )
+                "Body": BytesIO(json.dumps({"data": [{"b64_json": encoded}]}).encode())
             }
             result = self.client.post(self.path + "/ai", json=payload)
             result.raise_for_status()
             self.client.post(self.path + "/ai", json=payload).raise_for_status()
             self.assertEqual(inv.call_count, 1)
             self.assertEqual(
-                inv.call_args.kwargs["modelId"], "stability.stable-image-ultra-v1:1"
+                inv.call_args.kwargs["CustomAttributes"], "route=/v1/images/generations"
             )
             self.assertEqual(
-                json.loads(inv.call_args.kwargs["body"])["aspect_ratio"], "1:1"
+                json.loads(inv.call_args.kwargs["Body"])["size"], "1024x1024"
             )
         url = self.path + "/ai/" + payload["request_id"] + "/image"
         self.assertEqual(self.client.get(url).content, raw.getvalue())
@@ -206,15 +201,15 @@ class ParcelWorkflow(unittest.TestCase):
         self.assertEqual(other.get(self.path + "/ai").status_code, 404)
         self.assertEqual(other.post(self.path + "/ai", json=payload).status_code, 404)
 
-    def test_bedrock_denial_and_filtered_response(self):
+    def test_sagemaker_denial_and_invalid_response(self):
         from botocore.exceptions import ClientError
         from uuid import uuid4
 
-        with patch("server.bedrock.client") as runtime:
-            invoke = runtime.return_value.invoke_model
+        with patch("server.sagemaker.client") as runtime:
+            invoke = runtime.return_value.invoke_endpoint
             invoke.side_effect = ClientError(
                 {"Error": {"Code": "AccessDeniedException", "Message": "Denied"}},
-                "InvokeModel",
+                "InvokeEndpoint",
             )
 
             def attempt():
@@ -227,10 +222,6 @@ class ParcelWorkflow(unittest.TestCase):
 
             self.assertEqual(attempt().status_code, 403)
             invoke.side_effect = None
-            invoke.return_value = {
-                "body": BytesIO(
-                    b'{"finish_reasons":["Filter reason: prompt"],"images":[]}'
-                )
-            }
-            self.assertEqual(attempt().status_code, 422)
+            invoke.return_value = {"Body": BytesIO(b'{"data":[]}')}
+            self.assertEqual(attempt().status_code, 502)
             self.assertEqual(self.client.get(self.path + "/ai").json(), [])

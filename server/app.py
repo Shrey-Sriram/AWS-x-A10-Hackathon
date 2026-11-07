@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 
-from . import bedrock
+from . import bedrock, sagemaker
 from .domain import (
     SIGNALS,
     buffer_zone,
@@ -645,7 +645,6 @@ class Generation(BaseModel):
     request_id: UUID
     kind: Literal["concept", "brief"]
     prompt: str = Field(min_length=1, max_length=3000, pattern=r"\S")
-    model: Literal["core", "ultra"] = "core"
     aspect_ratio: Literal["16:9", "1:1", "9:16"] = "16:9"
 
 
@@ -678,13 +677,14 @@ def generated_image(pid: str, rid: UUID, email=Depends(user)):
 @app.post("/api/parcels/{pid}/ai")
 def generate(pid: str, body: Generation, email=Depends(user)):
     rid = str(body.request_id)
-    model = bedrock.IMAGES[body.model] if body.kind == "concept" else bedrock.TEXT
+    model = sagemaker.MODEL if body.kind == "concept" else bedrock.TEXT
     info = dict(
         id=rid,
         kind=body.kind,
         model=model,
         prompt=body.prompt,
-        region=bedrock.REGION,
+        region=sagemaker.REGION if body.kind == "concept" else bedrock.REGION,
+        provider="SageMaker" if body.kind == "concept" else "Bedrock",
         aspect_ratio=body.aspect_ratio,
         time=now().isoformat(),
         state="pending",
@@ -713,9 +713,7 @@ def generate(pid: str, body: Generation, email=Depends(user)):
         )
     try:
         if body.kind == "concept":
-            extra, png = bedrock.aws_call(
-                bedrock.image, model, prompt=body.prompt, ratio=body.aspect_ratio
-            )
+            extra, png = sagemaker.image(body.prompt, body.aspect_ratio)
         else:
             extra, png = bedrock.aws_call(
                 bedrock.brief,

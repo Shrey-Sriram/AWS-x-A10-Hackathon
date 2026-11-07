@@ -1,10 +1,8 @@
 """On-demand Bedrock workflows. All AWS calls use the server's SDK credential chain."""
 
-import base64
 import json
 import os
 from contextlib import closing
-from io import BytesIO
 
 import boto3
 from botocore.config import Config
@@ -15,13 +13,8 @@ from botocore.exceptions import (
     ProfileNotFound,
 )
 from fastapi import HTTPException
-from PIL import Image
 
 REGION = os.getenv("PARCELSITE_BEDROCK_REGION", "us-west-2")
-IMAGES = {
-    "core": "stability.stable-image-core-v1:1",
-    "ultra": "stability.stable-image-ultra-v1:1",
-}
 TEXT = os.getenv("PARCELSITE_BRIEF_MODEL", "us.amazon.nova-lite-v1:0")
 
 
@@ -65,35 +58,6 @@ def aws_call(operation, model, **kwargs):
         raise HTTPException(
             503, "The server could not connect to Amazon Bedrock."
         ) from exc
-
-
-def image(runtime, model, prompt, ratio):
-    res = runtime.invoke_model(
-        modelId=model,
-        contentType="application/json",
-        accept="application/json",
-        body=json.dumps(
-            {"prompt": prompt, "aspect_ratio": ratio, "output_format": "png"}
-        ),
-    )
-    with closing(res["body"]) as stream:
-        data = json.load(stream)
-    reason = next((reason for reason in data.get("finish_reasons", []) if reason), None)
-    if reason and "filter" in reason.lower():
-        raise HTTPException(
-            422, "Bedrock filtered the image request. Try a different description."
-        )
-    if reason or not data.get("images"):
-        raise HTTPException(502, "Bedrock did not return an image.")
-    try:
-        raw = base64.b64decode(data["images"][0], validate=True)
-        with Image.open(BytesIO(raw)) as pic:
-            if pic.format != "PNG":
-                raise ValueError("Expected PNG")
-            pic.verify()
-    except (OSError, ValueError, TypeError) as exc:
-        raise HTTPException(502, "Bedrock returned an invalid PNG.") from exc
-    return {"seed": (data.get("seeds") or [None])[0]}, raw
 
 
 def sources(parcel):
