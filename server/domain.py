@@ -193,13 +193,14 @@ def image_change(before, after):
 
 
 def heat_risk(parcel, obs):
-    rule = next(
+    rule = min(
         (
             r
             for r in parcel["rules"]
             if r["metric"] == "temperature" and r["op"] == "above"
         ),
-        None,
+        key=lambda rule: rule["limit"],
+        default=None,
     )
     if not rule or "temperature" not in obs["values"] or "prior_samples" not in obs:
         return None

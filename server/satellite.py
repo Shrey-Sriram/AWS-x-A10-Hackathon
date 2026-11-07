@@ -5,11 +5,11 @@ import requests
 
 from ml.imagery import ROOT, changed, frame_for, image_features
 
-seasonal_model = joblib.load(ROOT / "imagery-risk.joblib")
 from shapely.geometry import shape
 
 from .domain import image_change
 
+seasonal_model = joblib.load(ROOT / "imagery-risk.joblib")
 GIBS = "https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi"
 
 
