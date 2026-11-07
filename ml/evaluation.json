@@ -1,0 +1,26 @@
+{
+  "source": "https://storage.googleapis.com/weatherbench2/datasets/era5/1959-2023_01_10-6h-64x32_equiangular_conservative.zarr",
+  "variable": "2m_temperature",
+  "cells": 50,
+  "start_utc": "2015-08-10T00:00:00",
+  "holdout_start_utc": "2018-09-18T00:00:00",
+  "end_utc": "2019-09-17T18:00:00",
+  "train_rows": 56600,
+  "test_rows": 18100,
+  "positive_rate": 0.13828729281767957,
+  "roc_auc": 0.990071797154308,
+  "average_precision": 0.9493420014031848,
+  "brier": 0.02601232759271345,
+  "persistence_brier": 0.04801104972375691,
+  "features": [
+    "temperature_c",
+    "threshold_c",
+    "margin_c",
+    "latitude",
+    "longitude",
+    "season_sin",
+    "season_cos",
+    "hour_sin",
+    "hour_cos"
+  ]
+}
