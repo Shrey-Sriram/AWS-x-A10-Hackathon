@@ -159,3 +159,78 @@ class ParcelWorkflow(unittest.TestCase):
                 "percent_within_limit"
             ]
         )
+
+    def test_bedrock_image_and_access(self):
+        import base64
+        import json
+        from uuid import uuid4
+
+        raw = BytesIO()
+        Image.new("RGB", (32, 32), "green").save(raw, "PNG")
+        encoded = base64.b64encode(raw.getvalue()).decode()
+        payload = dict(
+            kind="concept",
+            model="ultra",
+            aspect_ratio="1:1",
+            prompt="An orchard",
+            request_id=str(uuid4()),
+        )
+        with patch("server.bedrock.client") as runtime:
+            inv = runtime.return_value.invoke_model
+            inv.return_value = {
+                "body": BytesIO(
+                    json.dumps(
+                        {"images": [encoded], "seeds": [42], "finish_reasons": [None]}
+                    ).encode()
+                )
+            }
+            result = self.client.post(self.path + "/ai", json=payload)
+            result.raise_for_status()
+            self.client.post(self.path + "/ai", json=payload).raise_for_status()
+            self.assertEqual(inv.call_count, 1)
+            self.assertEqual(
+                inv.call_args.kwargs["modelId"], "stability.stable-image-ultra-v1:1"
+            )
+            self.assertEqual(
+                json.loads(inv.call_args.kwargs["body"])["aspect_ratio"], "1:1"
+            )
+        url = self.path + "/ai/" + payload["request_id"] + "/image"
+        self.assertEqual(self.client.get(url).content, raw.getvalue())
+        self.assertEqual(len(self.client.get(self.path + "/ai").json()), 1)
+        other = TestClient(app)
+        other.post(
+            "/api/signup",
+            json={"email": "ai-other@example.org", "password": "local-test-password"},
+        ).raise_for_status()
+        self.assertEqual(other.get(url).status_code, 404)
+        self.assertEqual(other.get(self.path + "/ai").status_code, 404)
+        self.assertEqual(other.post(self.path + "/ai", json=payload).status_code, 404)
+
+    def test_bedrock_denial_and_filtered_response(self):
+        from botocore.exceptions import ClientError
+        from uuid import uuid4
+
+        with patch("server.bedrock.client") as runtime:
+            invoke = runtime.return_value.invoke_model
+            invoke.side_effect = ClientError(
+                {"Error": {"Code": "AccessDeniedException", "Message": "Denied"}},
+                "InvokeModel",
+            )
+
+            def attempt():
+                return self.client.post(
+                    self.path + "/ai",
+                    json=dict(
+                        kind="concept", prompt="A meadow", request_id=str(uuid4())
+                    ),
+                )
+
+            self.assertEqual(attempt().status_code, 403)
+            invoke.side_effect = None
+            invoke.return_value = {
+                "body": BytesIO(
+                    b'{"finish_reasons":["Filter reason: prompt"],"images":[]}'
+                )
+            }
+            self.assertEqual(attempt().status_code, 422)
+            self.assertEqual(self.client.get(self.path + "/ai").json(), [])

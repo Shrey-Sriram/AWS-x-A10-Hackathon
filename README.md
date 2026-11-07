@@ -22,6 +22,18 @@ Open [the dashboard](http://127.0.0.1:8000), create an account, and select **Add
 
 A background thread refreshes registered parcels every 15 minutes and checks satellite imagery once per acquisition date while the server runs. Use one server worker with this embedded scheduler. Set `LEASESENSE_MONITOR=0` for manual refresh. Account and parcel data are stored in `data/leasesense.sqlite` by default. Override the path with `LEASESENSE_DB`. Set `HTTPS_ONLY=1` when serving through HTTPS. The contact form saves inquiries to the local operator database.
 
+## Amazon Bedrock studio
+
+Open a parcel and scroll to **Bedrock studio**. **Generate 2D concept** sends the description and aspect ratio to Stability AI Stable Image Core or Ultra using Bedrock Runtime's InvokeModel API. Successful PNGs include the model, seed and creation time in the saved record and can be downloaded. Concepts illustrate proposed site designs. The satellite evidence and violation workflows use their own observations.
+
+**Generate brief** calls the Bedrock Converse API with a question and a bounded snapshot of this parcel's status, confirmed rules, recent observations and open alerts. Expand **Source records** below an answer to inspect the records available to the model at generation time. Credentials stay on the Python server. Both workflows run on demand and incur the selected AWS model's inference charges.
+
+The SDK uses the standard AWS credential chain, including a configured local profile or workload role. Set `PARCELSITE_BEDROCK_REGION` to override the default `us-west-2` and `PARCELSITE_BRIEF_MODEL` to override the default `us.amazon.nova-lite-v1:0`. Restart the server after changing settings. Grant the server principal `bedrock:InvokeModel` for the selected model, including the profile and destination foundation models for cross-region text inference. The account must have the appropriate model access. The initial workshop role allowed Nova and explicitly denied Stability models. The administrator must update the model allowlist or supply an authorized role before real PNG generation will succeed.
+
+The authenticated API exposes `GET/POST /api/parcels/{pid}/ai` for saved outputs and generation, and `GET /api/parcels/{pid}/ai/{request_id}/image` for PNG bytes. Each generation accepts a UUID request ID to deduplicate repeated submissions. Artifacts are private to the parcel owner and stored in the existing SQLite database.
+
+[Stable Image Core API](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-diffusion-stable-image-core-text-image-request-response.html) · [Stable Image Ultra API](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-diffusion-stable-ultra-text-image-request-response.html)
+
 ## Engineering walkthrough
 
 I use the parcel ID to connect a lease revision, its geometry, the operator's confirmed rules, and dated measurements. Keeping the original clause alongside the numerical limit gives the operator a way to trace an alert back to the lease. The clause classifier routes text into five categories. A unit-aware parser proposes numerical rules for review.
