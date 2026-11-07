@@ -16,7 +16,7 @@ function aiGallery(pid, outputs) {
       .join("") || "<small>No saved concepts or briefs.</small>"
   );
 }
-function setupBedrock(parcel) {
+function setupStudio(parcel) {
   const path = "parcels/" + parcel.id + "/ai";
   const gallery = $("aiGallery");
   async function refresh() {
@@ -27,7 +27,7 @@ function setupBedrock(parcel) {
     const image = kind === "concept";
     modal(`<h2>${image ? "Generate a 2D concept" : "Generate a parcel brief"}</h2>
       <form id="aiForm"><label>${image ? "Image description" : "Briefing question"}<textarea required maxlength="3000" name="prompt"></textarea></label>
-      ${image ? `<div class="split"><label>Stability AI model<select name="model"><option value="core">Stable Image Core</option><option value="ultra">Stable Image Ultra</option></select></label><label>Aspect ratio<select name="aspect_ratio"><option>16:9</option><option>1:1</option><option>9:16</option></select></label></div><small>Bedrock receives your description. Generated concepts are saved in this parcel’s studio.</small>` : "<small>Bedrock receives the question and a snapshot of this parcel’s status, confirmed rules, recent readings and open alerts.</small>"}
+      ${image ? `<label>Aspect ratio<select name="aspect_ratio"><option>16:9</option><option>1:1</option><option>9:16</option></select></label><small>SageMaker sends your description to FLUX.2-klein-4B. Generated concepts are saved in this parcel’s studio.</small>` : "<small>Bedrock receives the question and a snapshot of this parcel’s status, confirmed rules, recent readings and open alerts.</small>"}
       <p id="aiStatus" role="status" aria-live="polite"></p><button class="primary">${image ? "Generate concept" : "Generate brief"}</button></form>`);
     const form = $("aiForm"),
       status = $("aiStatus");
@@ -39,7 +39,9 @@ function setupBedrock(parcel) {
       const button = e.submitter;
       if (button.disabled) return;
       button.disabled = true;
-      status.textContent = "Generating with Amazon Bedrock…";
+      status.textContent = image
+        ? "Generating with SageMaker…"
+        : "Generating with Amazon Bedrock…";
       try {
         await api(path, {
           ...Object.fromEntries(new FormData(form)),

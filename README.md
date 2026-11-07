@@ -22,17 +22,15 @@ Open [the dashboard](http://127.0.0.1:8000), create an account, and select **Add
 
 A background thread refreshes registered parcels every 15 minutes and checks satellite imagery once per acquisition date while the server runs. Use one server worker with this embedded scheduler. Set `LEASESENSE_MONITOR=0` for manual refresh. Account and parcel data are stored in `data/leasesense.sqlite` by default. Override the path with `LEASESENSE_DB`. Set `HTTPS_ONLY=1` when serving through HTTPS. The contact form saves inquiries to the local operator database.
 
-## Amazon Bedrock studio
+## Parcel studio
 
-Open a parcel and scroll to **Bedrock studio**. **Generate 2D concept** sends the description and aspect ratio to Stability AI Stable Image Core or Ultra using Bedrock Runtime's InvokeModel API. Successful PNGs include the model, seed and creation time in the saved record and can be downloaded. Concepts illustrate proposed site designs. The satellite evidence and violation workflows use their own observations.
+Open a parcel and select **Generate 2D concept**. FastAPI sends the description, aspect ratio and seed to Black Forest Labs FLUX.2-klein-4B through SageMaker Runtime. The authenticated gallery stores the PNG, prompt, model, endpoint, region and seed alongside the parcel. Concepts are illustrative. Compliance monitoring uses observed conditions and satellite imagery.
 
-**Generate brief** calls the Bedrock Converse API with a question and a bounded snapshot of this parcel's status, confirmed rules, recent observations and open alerts. Expand **Source records** below an answer to inspect the records available to the model at generation time. Credentials stay on the Python server. Both workflows run on demand and incur the selected AWS model's inference charges.
+The defaults are the real-time endpoint `parcelsite-flux-klein-4b` in `us-east-1`. To use a different compatible endpoint, set `PARCELSITE_SAGEMAKER_ENDPOINT` and `PARCELSITE_SAGEMAKER_REGION` and restart the server. The server role needs `sagemaker:InvokeEndpoint` on the named endpoint. The adapter uses the AWS vLLM-Omni container's image route and reads its base64 PNG response. GPU hosting incurs charges while the endpoint is deployed, including idle time. To retire the default endpoint, run `aws sagemaker delete-endpoint --region us-east-1 --endpoint-name parcelsite-flux-klein-4b`.
 
-The SDK uses the standard AWS credential chain, including a configured local profile or workload role. Set `PARCELSITE_BEDROCK_REGION` to override the default `us-west-2` and `PARCELSITE_BRIEF_MODEL` to override the default `us.amazon.nova-lite-v1:0`. Restart the server after changing settings. Grant the server principal `bedrock:InvokeModel` for the selected model, including the profile and destination foundation models for cross-region text inference. The account must have the appropriate model access. The initial workshop role allowed Nova and explicitly denied Stability models. The administrator must update the model allowlist or supply an authorized role before real PNG generation will succeed.
+**Generate brief** uses Amazon Nova through Bedrock Converse. Prompts include the parcel's status, confirmed rules, recent readings and open alerts. Expand **Source records** to inspect that snapshot. For briefs, the server role needs `bedrock:InvokeModel` on the configured model/profile and underlying foundation models. Override the defaults with `PARCELSITE_BEDROCK_REGION` and `PARCELSITE_BRIEF_MODEL`.
 
-The authenticated API exposes `GET/POST /api/parcels/{pid}/ai` for saved outputs and generation, and `GET /api/parcels/{pid}/ai/{request_id}/image` for PNG bytes. Each generation accepts a UUID request ID to deduplicate repeated submissions. Artifacts are private to the parcel owner and stored in the existing SQLite database.
-
-[Stable Image Core API](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-diffusion-stable-image-core-text-image-request-response.html) · [Stable Image Ultra API](https://docs.aws.amazon.com/bedrock/latest/userguide/model-parameters-diffusion-stable-ultra-text-image-request-response.html)
+The server uses the standard AWS SDK credential chain. Both workflows save outputs in SQLite, enforce parcel ownership, and deduplicate repeated UUID request IDs. [AWS FLUX deployment and invocation guide](https://aws.amazon.com/blogs/machine-learning/generate-images-and-video-with-vllm-omni-on-sagemaker-ai-part-2/)
 
 ## Engineering walkthrough
 
