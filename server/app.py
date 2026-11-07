@@ -45,7 +45,7 @@ async def lifespan(app):
         stop.set()
 
 
-app = FastAPI(title="LeaseSense", lifespan=lifespan)
+app = FastAPI(title="parcelsite", lifespan=lifespan)
 DB = Path(os.environ.get("LEASESENSE_DB", "data/leasesense.sqlite"))
 DB.parent.mkdir(exist_ok=True, parents=True)
 with sqlite3.connect(DB) as conn:

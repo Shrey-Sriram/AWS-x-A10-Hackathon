@@ -1,6 +1,6 @@
-# LeaseSense
+# parcelsite
 
-LeaseSense turns a land lease into a parcel monitoring workspace. An operator draws a boundary, uploads a lease, confirms measurable obligations, and follows environmental readings and alerts through to an audit export.
+parcelsite turns a land lease into a parcel monitoring workspace. An operator draws a boundary, uploads a lease, confirms measurable obligations, and follows environmental readings and alerts through to an audit export.
 
 ## Run locally
 

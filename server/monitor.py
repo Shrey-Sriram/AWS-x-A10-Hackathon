@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from . import app as api
 
-log = logging.getLogger("leasesense.monitor")
+log = logging.getLogger("parcelsite.monitor")
 
 
 def loop(stop: threading.Event):
