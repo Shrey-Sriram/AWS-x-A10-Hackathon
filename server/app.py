@@ -12,7 +12,7 @@ from hashlib import pbkdf2_hmac, sha256
 from hmac import compare_digest
 from pathlib import Path
 from typing import Literal
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 
+from . import bedrock
 from .domain import (
     SIGNALS,
     buffer_zone,
@@ -54,6 +55,10 @@ with sqlite3.connect(DB) as conn:
     CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,email TEXT,expires TEXT);
     CREATE TABLE IF NOT EXISTS parcels(id TEXT PRIMARY KEY,email TEXT,body TEXT);
     CREATE TABLE IF NOT EXISTS contacts(id TEXT PRIMARY KEY,email TEXT,message TEXT,time TEXT);
+    CREATE TABLE IF NOT EXISTS ai_outputs(
+        parcel TEXT NOT NULL, request TEXT NOT NULL, info TEXT NOT NULL, png BLOB,
+        PRIMARY KEY(parcel,request)
+    );
     """)
 
 
@@ -634,6 +639,105 @@ def report(
         media_type=mime,
         headers={"Content-Disposition": f'attachment; filename="{kind}-{pid}.{ext}"'},
     )
+
+
+class Generation(BaseModel):
+    request_id: UUID
+    kind: Literal["concept", "brief"]
+    prompt: str = Field(min_length=1, max_length=3000, pattern=r"\S")
+    model: Literal["core", "ultra"] = "core"
+    aspect_ratio: Literal["16:9", "1:1", "9:16"] = "16:9"
+
+
+@app.get("/api/parcels/{pid}/ai")
+def generations(pid: str, email=Depends(user)):
+    with database() as db:
+        get(db, pid, email)
+        rows = db.execute(
+            "SELECT info FROM ai_outputs WHERE parcel=? ORDER BY rowid DESC", (pid,)
+        )
+        return [
+            info for (raw,) in rows if (info := json.loads(raw))["state"] == "ready"
+        ]
+
+
+@app.get("/api/parcels/{pid}/ai/{rid}/image")
+def generated_image(pid: str, rid: UUID, email=Depends(user)):
+    with database() as db:
+        get(db, pid, email)
+        row = db.execute(
+            "SELECT png FROM ai_outputs WHERE parcel=? AND request=?", (pid, str(rid))
+        ).fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "Image not found")
+    return Response(
+        row[0], media_type="image/png", headers={"Cache-Control": "private, no-store"}
+    )
+
+
+@app.post("/api/parcels/{pid}/ai")
+def generate(pid: str, body: Generation, email=Depends(user)):
+    rid = str(body.request_id)
+    model = bedrock.IMAGES[body.model] if body.kind == "concept" else bedrock.TEXT
+    info = dict(
+        id=rid,
+        kind=body.kind,
+        model=model,
+        prompt=body.prompt,
+        region=bedrock.REGION,
+        aspect_ratio=body.aspect_ratio,
+        time=now().isoformat(),
+        state="pending",
+    )
+    with database(True) as db:
+        parcel = get(db, pid, email)
+        row = db.execute(
+            "SELECT info FROM ai_outputs WHERE parcel=? AND request=?", (pid, rid)
+        ).fetchone()
+        if row:
+            previous = json.loads(row[0])
+            if any(
+                previous[k] != info[k]
+                for k in ("kind", "prompt", "model", "aspect_ratio")
+            ):
+                raise HTTPException(409, "Request ID already used")
+            if previous["state"] == "ready":
+                return previous
+            raise HTTPException(
+                409,
+                "This request was already submitted. Refresh the gallery before starting another.",
+            )
+        db.execute(
+            "INSERT INTO ai_outputs(parcel,request,info) VALUES(?,?,?)",
+            (pid, rid, json.dumps(info)),
+        )
+    try:
+        if body.kind == "concept":
+            extra, png = bedrock.aws_call(
+                bedrock.image, model, prompt=body.prompt, ratio=body.aspect_ratio
+            )
+        else:
+            extra, png = bedrock.aws_call(
+                bedrock.brief,
+                model,
+                prompt=body.prompt,
+                records=bedrock.sources(parcel),
+            )
+        info.update(extra, state="ready")
+        with database(True) as db:
+            db.execute(
+                "UPDATE ai_outputs SET info=?,png=? WHERE parcel=? AND request=?",
+                (json.dumps(info), png, pid, rid),
+            )
+    except Exception:
+        with database(True) as db:
+            info["state"] = "failed"
+            db.execute(
+                "UPDATE ai_outputs SET info=? WHERE parcel=? AND request=?",
+                (json.dumps(info), pid, rid),
+            )
+        raise
+    return info
 
 
 app.mount(
