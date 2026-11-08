@@ -34,6 +34,42 @@ class ParcelWorkflow(unittest.TestCase):
         response.raise_for_status()
         self.path = "/api/parcels/" + response.json()["id"]
 
+    def test_deletion_ownership_and_stale_notes(self):
+        rival = TestClient(app)
+        rival.post("/api/signup", json={"email": "rival@example.org", "password": "another-password"}).raise_for_status()
+        self.assertEqual(rival.delete(self.path).status_code, 404)
+        self.assertEqual(rival.get(self.path + "/observations").status_code, 404)
+        for text in ("First", "Second"):
+            parcel = self.client.post(self.path + "/notes", json={"text": text}).json()
+        first, second = parcel["history"][-2:]
+        index = len(parcel["history"]) - 2
+        url = self.path + "/records/history/" + str(index)
+        self.assertEqual(rival.request("DELETE", url, json={"time": first["time"]}).status_code, 404)
+        self.client.request("DELETE", url, json={"time": first["time"]}).raise_for_status()
+        self.assertEqual(self.client.request("DELETE", url, json={"time": first["time"]}).status_code, 409)
+        self.assertIn(second, self.client.get("/api/parcels").json()[0]["history"])
+        self.client.delete(self.path).raise_for_status()
+        self.assertEqual(self.client.get("/api/parcels").json(), [])
+
+    def test_link_and_sync_county_boundary(self):
+        from fastapi import HTTPException
+        from server.app import sync_county
+
+        original = self.client.get(self.path + "/boundary.geojson").json()["geometry"]
+        selected = {"number": "sample", "geometry": original}
+        with patch("server.county.lookup", return_value=selected):
+            self.client.post(self.path + "/county-link", json={"number": "sample"}).raise_for_status()
+        pid = self.path.rsplit("/", 1)[1]
+        changed = {"type": "Polygon", "coordinates": [[[-99,35],[-99.2,35],[-99.2,35.1],[-99,35]]]}
+        with patch("server.county.lookup", return_value={**selected, "geometry": changed}):
+            sync_county(pid, self.email, "sample")
+        with patch("server.county.lookup", side_effect=HTTPException(503, "Unavailable")):
+            sync_county(pid, self.email, "sample")
+        self.assertEqual(self.client.get(self.path + "/boundary.geojson").json()["geometry"], changed)
+        source = self.client.get("/api/parcels").json()[0]["boundary_source"]
+        self.assertEqual(source["message"], "Unavailable")
+        self.assertEqual(source["previous_geometry"], original)
+
     def test_monitoring_and_reports(self):
         doc = BytesIO()
         with ZipFile(doc, "w") as f:
@@ -225,3 +261,64 @@ class ParcelWorkflow(unittest.TestCase):
             invoke.return_value = {"Body": BytesIO(b'{"data":[]}')}
             self.assertEqual(attempt().status_code, 502)
             self.assertEqual(self.client.get(self.path + "/ai").json(), [])
+
+    def test_lease_boundary_preview_and_atomic_save(self):
+        import json
+        from server.lease_boundary import read_boundary
+
+        raw = BytesIO()
+        with ZipFile(raw, "w") as f:
+            rows = [
+                ["Latitude", "Longitude"],
+                ["43.642", "-116.645"],
+                ["43.642", "-116.640"],
+                ["43.645", "-116.640"],
+            ]
+            table = "".join(
+                "<w:tr>"
+                + "".join(
+                    "<w:tc><w:p><w:r><w:t>" + v + "</w:t></w:r></w:p></w:tc>"
+                    for v in row
+                )
+                + "</w:tr>"
+                for row in rows
+            )
+            f.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="urn:word"><w:body><w:p><w:r><w:t>Boundary coordinates</w:t></w:r></w:p><w:tbl>'
+                + table
+                + "</w:tbl></w:body></w:document>",
+            )
+        files = {"file": ("exhibit.docx", raw.getvalue())}
+        preview = self.client.post("/api/map/lease-preview", files=files)
+        preview.raise_for_status()
+        g = preview.json()["geometry"]
+        self.assertEqual(g["coordinates"][0][0], [-116.645, 43.642])
+        body = {"name": "Idaho test", "geometry": g}
+        res = self.client.post(
+            "/api/parcels/from-lease", data={"parcel": json.dumps(body)}, files=files
+        )
+        res.raise_for_status()
+        self.assertEqual(res.json()["leases"][0]["name"], "exhibit.docx")
+        self.assertEqual(
+            res.json()["boundary_source"]["method"], "Boundary coordinate table"
+        )
+        count = len(self.client.get("/api/parcels").json())
+        body["geometry"] = {
+            "type": "Polygon",
+            "coordinates": [[[1, 1], [1, 2], [2, 2], [1, 1]]],
+        }
+        self.assertEqual(
+            self.client.post(
+                "/api/parcels/from-lease",
+                data={"parcel": json.dumps(body)},
+                files=files,
+            ).status_code,
+            422,
+        )
+        self.assertEqual(len(self.client.get("/api/parcels").json()), count)
+        self.assertEqual(read_boundary([(1, json.dumps(g))])["page"], 1)
+        with self.assertRaises(ValueError):
+            read_boundary([(1, "123 Demo Lane, APN 100.")])
+        with self.assertRaises(ValueError):
+            read_boundary([(1, json.dumps(g)), (2, json.dumps(g))])

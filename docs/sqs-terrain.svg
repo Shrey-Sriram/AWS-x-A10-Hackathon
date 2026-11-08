@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
+<title>How Parcelsite uses Amazon SQS to build terrain</title>
+<defs><marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#506a60"/></marker></defs>
+<rect width="1280" height="720" fill="#fafaf6"/>
+<g font-family="Arial,sans-serif" fill="#193b34"><text x="60" y="80" font-size="26">PARCELSITE  /  TERRAIN</text><text x="60" y="151" font-size="50">How a parcel becomes a 3D landscape</text>
+<text x="60" y="212" font-size="24">The user selects “Load measured terrain.” The browser can keep working while AWS builds it.</text>
+<g fill="none" stroke="#506a60" stroke-width="3" marker-end="url(#tip)"><path d="M295 375h65"/><path d="M580 375h65"/><path d="M890 375h65"/></g>
+<rect x="355" y="290" width="230" height="176" fill="#fee7b9"/>
+<g font-size="28"><text x="60" y="345">FastAPI</text><text x="378" y="345">Amazon SQS</text><text x="663" y="345">AWS Lambda</text><text x="978" y="345">Amazon S3</text></g>
+<g font-size="21"><text x="60" y="394">Sends the boundary</text><text x="60" y="425">and a job ID</text><text x="378" y="394">Queues the</text><text x="378" y="425">terrain request</text><text x="663" y="394">Gets USGS heights</text><text x="663" y="425">and builds the mesh</text><text x="978" y="394">Stores the grid,</text><text x="978" y="425">3D file and status</text></g>
+<path d="M60 525h1160" stroke="#a3b6ab"/><text x="60" y="580" font-size="27">When the terrain is ready</text><text x="60" y="626" font-size="23">The browser checks FastAPI for status. FastAPI reads the result from S3 and serves the 3D file.</text></g></svg>

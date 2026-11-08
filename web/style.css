@@ -599,3 +599,15 @@ nav button {
   outline: 2px solid #3c654d;
   outline-offset: 2px;
 }
+
+.exhibit-guide { padding-block: 14px; border-block: 1px solid #cbd2c8; }
+.exhibit-guide ul { padding-left: 1.25em; margin: 0 0 8px; }
+.exhibit-guide li + li { margin-top: 4px; }
+#exhibitRequirements { font-size: 13px; line-height: 1.45; }
+dialog:has(.farm-view) { width:min(920px,94vw); max-width:94vw; padding:clamp(14px,3vw,30px); overflow-y:auto; max-height:92dvh; }
+.farm-view h2 { margin:0 32px 8px 0; }
+.farm-view model-viewer { display:block; width:100%; height:clamp(260px,52vh,560px); background:#e8e7df; touch-action:pan-y; }
+.farm-view .actions { margin-top:12px; }
+.farm-view form { margin-top:16px; }
+.farm-view small { display:block; margin:6px 0; }
+@media (max-width:700px), (max-height:760px) { .farm-view model-viewer { height:clamp(180px,37dvh,360px); } }

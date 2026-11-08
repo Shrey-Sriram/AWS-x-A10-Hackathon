@@ -1,0 +1,5 @@
+Pillow==11.3.0
+numpy==2.2.6
+scipy==1.15.3
+trimesh==4.11.1
+shapely==2.1.2

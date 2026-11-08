@@ -11,3 +11,5 @@ shapely==2.2.0
 Pillow==12.2.0
 pyproj==3.8.0
 boto3==1.43.126
+trimesh==5.2.0
+fast-simplification==0.2.0

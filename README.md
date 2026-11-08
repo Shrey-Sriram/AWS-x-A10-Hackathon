@@ -16,6 +16,7 @@ python -m uvicorn server.app:app --host 127.0.0.1 --port 8000
 Open [the dashboard](http://127.0.0.1:8000), create an account, and select **Add parcel**. The checked-in model weights load at startup. Weather, air quality, satellite imagery and map tiles need internet access. The API reference is available at [/docs](http://127.0.0.1:8000/docs).
 
 1. Draw at least three points or import a GeoJSON/KML polygon. For a multi-feature file, put the parcel first and name subsequent polygons for their land uses. Set the boundary buffer in meters.
+   You can also choose **Read boundary from lease exhibit** in the parcel form. A text PDF or DOCX can contain one embedded GeoJSON polygon or a boundary coordinate table in decimal degrees. For a table, include a heading containing “boundary”, a “Longitude, Latitude” or “Latitude, Longitude” header, and one ordered corner per row. Review the preview and save. The app attaches the lease revision and boundary source to the parcel. Export its GeoJSON from Reports. Addresses, parcel identifiers, scanned images and survey bearings alone require a survey file or a manually drawn boundary.
 2. Upload a text-based PDF or DOCX. Open **Add rule**, select a lease revision and extracted clause, and review its measurement, direction and limit. Uploading another revision preserves the previous text.
 3. Select **Refresh sensors** for weather, near-surface soil and PM2.5 readings. **Load satellite comparison** compares two dated Terra MODIS images of the same area. **Compare images** also accepts two co-registered aerial images. The overlay highlights changed pixels.
 4. Open violations record the source, observation time, rule, value and suggested response. Resolve an event with a field note. Download a weekly audit, violation CSV, parcel scorecard, georeferenced risk layers or PNG heatmap.
@@ -78,3 +79,7 @@ The integration tests exercise document extraction, rule evaluation, duplicate f
 The July 2025 pitch credits Bobby Bilo, Yohan Kim, Hasan Onallah and Arnav Nair. This repository contains a new implementation of the pitch workflow.
 
 Weather data comes from [WeatherBench 2](https://weatherbench2.readthedocs.io/en/latest/data-guide.html), [Open-Meteo historical weather](https://open-meteo.com/en/docs/historical-weather-api), [weather forecasts](https://open-meteo.com/en/docs) and [air quality](https://open-meteo.com/en/docs/air-quality-api). Satellite imagery, including the sign-in image, comes from [NASA GIBS](https://nasa-gibs.github.io/gibs-api-docs/). Map tiles use [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Leaflet's license is included in `web/vendor/`.
+
+## Architecture and evidence
+
+See the [stack and model inventory](docs/stack.md) for what each layer does and the [technical whitepaper](docs/technical-whitepaper.md) for data sources, evaluation and limitations. The interactive parcel uses measured elevation where available. Generative models are used for briefs and illustrative concepts. See [Shap-E training](ml/text3d/README.md) for the separate GPU experiment.

@@ -24,3 +24,20 @@ def loop(stop: threading.Event):
             except Exception as exc:
                 log.warning("Parcel %s monitoring update failed: %s", pid, exc)
         stop.wait(900)
+
+
+def boundary_loop(stop: threading.Event):
+    while not stop.is_set():
+        with api.database() as db:
+            linked = db.execute("""
+                SELECT id,email,json_extract(body,'$.boundary_source.number')
+                FROM parcels WHERE json_extract(body,'$.boundary_source.provider')='Ada County'
+            """).fetchall()
+        for pid, email, number in linked:
+            if stop.is_set():
+                return
+            try:
+                api.sync_county(pid, email, number)
+            except Exception:
+                log.exception("Parcel %s boundary sync failed", pid)
+        stop.wait(60)

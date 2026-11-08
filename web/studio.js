@@ -9,9 +9,12 @@ function aiGallery(pid, outputs) {
           encodeURIComponent(result.id) +
           "/image";
         const meta = esc(result.model) + " · " + esc(localTime(result.time));
+        const remove = `<button data-delete-output="${esc(result.id)}">Delete saved output</button>`;
+        if (result.kind === "concept3d")
+          return `<article class="ai-output"><strong>3D concept</strong><p>${esc(result.prompt)}</p><small>${meta}</small><button data-scene="${esc(result.id)}">Open 3D concept</button>${remove}</article>`;
         if (result.kind === "concept")
-          return `<figure class="ai-output"><figcaption><strong>AI-generated concept</strong><small>${meta}</small></figcaption><img class="photo" loading="lazy" src="${path}" alt="${esc(result.prompt)}"><p>${esc(result.prompt)}</p><a class="link" download="parcelsite-concept.png" href="${path}">Download PNG</a></figure>`;
-        return `<article class="ai-output"><strong>AI-generated brief</strong><small>${meta}</small><p>${esc(result.prompt)}</p><div class="brief-text">${esc(result.text)}</div><details><summary>Source records (${result.sources.length})</summary><ol>${result.sources.map((record, i) => `<li><b>[S${i + 1}]</b> ${esc(record)}</li>`).join("")}</ol></details></article>`;
+          return `<figure class="ai-output"><figcaption><strong>AI-generated concept</strong><small>${meta}</small></figcaption><img class="photo" loading="lazy" src="${path}" alt="${esc(result.prompt)}"><p>${esc(result.prompt)}</p><a class="link" download="parcelsite-concept.png" href="${path}">Download PNG</a>${remove}</figure>`;
+        return `<article class="ai-output"><strong>AI-generated brief</strong><small>${meta}</small><p>${esc(result.prompt)}</p><div class="brief-text">${esc(result.text)}</div><details><summary>Source records (${result.sources.length})</summary><ol>${result.sources.map((record, i) => `<li><b>[S${i + 1}]</b> ${esc(record)}</li>`).join("")}</ol></details>${remove}</article>`;
       })
       .join("") || "<small>No saved concepts or briefs.</small>"
   );
@@ -58,6 +61,17 @@ function setupStudio(parcel) {
       }
     };
   }
-  $("generateConcept").onclick = () => compose("concept");
+  gallery.onclick = run(async (event) => {
+    const remove = event.target.closest("[data-delete-output]");
+    if (remove) {
+      if (!confirm("Delete this saved studio output?")) return;
+      await api(path + "/" + remove.dataset.deleteOutput, undefined, "DELETE");
+      await refresh();
+      return;
+    }
+    const button = event.target.closest("[data-scene]");
+    if (button) openStudioScene(parcel, refresh, button.dataset.scene);
+  });
+  $("generateConcept").onclick = () => openStudioScene(parcel, refresh);
   $("generateBrief").onclick = () => compose("brief");
 }
