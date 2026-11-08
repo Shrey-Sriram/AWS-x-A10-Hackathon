@@ -34,6 +34,23 @@ class ParcelWorkflow(unittest.TestCase):
         response.raise_for_status()
         self.path = "/api/parcels/" + response.json()["id"]
 
+    def test_deletion_ownership_and_stale_notes(self):
+        rival = TestClient(app)
+        rival.post("/api/signup", json={"email": "rival@example.org", "password": "another-password"}).raise_for_status()
+        self.assertEqual(rival.delete(self.path).status_code, 404)
+        self.assertEqual(rival.get(self.path + "/observations").status_code, 404)
+        for text in ("First", "Second"):
+            parcel = self.client.post(self.path + "/notes", json={"text": text}).json()
+        first, second = parcel["history"][-2:]
+        index = len(parcel["history"]) - 2
+        url = self.path + "/records/history/" + str(index)
+        self.assertEqual(rival.request("DELETE", url, json={"time": first["time"]}).status_code, 404)
+        self.client.request("DELETE", url, json={"time": first["time"]}).raise_for_status()
+        self.assertEqual(self.client.request("DELETE", url, json={"time": first["time"]}).status_code, 409)
+        self.assertIn(second, self.client.get("/api/parcels").json()[0]["history"])
+        self.client.delete(self.path).raise_for_status()
+        self.assertEqual(self.client.get("/api/parcels").json(), [])
+
     def test_monitoring_and_reports(self):
         doc = BytesIO()
         with ZipFile(doc, "w") as f:

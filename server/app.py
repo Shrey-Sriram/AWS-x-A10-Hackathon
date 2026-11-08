@@ -215,6 +215,74 @@ def parcels(email=Depends(user)):
         ]
 
 
+@app.delete("/api/parcels/{pid}")
+def delete_parcel(pid: str, email=Depends(user)):
+    with database(True) as db:
+        get(db, pid, email)
+        for table in ("parcel_images", "parcel_elevations", "terrain_jobs", "ai_outputs"):
+            db.execute(f"DELETE FROM {table} WHERE parcel=?", (pid,))
+        db.execute("DELETE FROM parcels WHERE id=? AND email=?", (pid, email))
+    return {"ok": True}
+
+
+@app.delete("/api/parcels/{pid}/ai/{rid}")
+def delete_output(pid: str, rid: UUID, email=Depends(user)):
+    with database(True) as db:
+        get(db, pid, email)
+        deleted = db.execute("DELETE FROM ai_outputs WHERE parcel=? AND request=?",
+                             (pid, str(rid))).rowcount
+        if not deleted:
+            raise HTTPException(404, "Saved output not found")
+    return {"ok": True}
+
+
+@app.delete("/api/parcels/{pid}/comparison")
+def delete_comparison(pid: str, email=Depends(user)):
+    with edit(pid, email) as parcel:
+        parcel.pop("latest_image", None)
+        parcel.pop("satellite", None)
+    return {"ok": True}
+
+
+@app.delete("/api/parcels/{pid}/site-image")
+def delete_site_image(pid: str, email=Depends(user)):
+    with database(True) as db:
+        get(db, pid, email)
+        db.execute("DELETE FROM parcel_images WHERE parcel=?", (pid,))
+    return {"ok": True}
+
+
+@app.delete("/api/parcels/{pid}/records/{kind}/{index}")
+def delete_record(pid: str, kind: Literal["rules", "leases", "history"], index: int,
+                  expected: dict, email=Depends(user)):
+    with edit(pid, email) as parcel:
+        records = parcel[kind]
+        if not 0 <= index < len(records):
+            raise HTTPException(409, "Records changed. Refresh the parcel and try again.")
+        record = records[index]
+        identity = record if kind == "rules" else {"time": record["time"]}
+        if identity != expected:
+            raise HTTPException(409, "Records changed. Refresh the parcel and try again.")
+        if kind == "leases" and any(r.get("lease_ref") == record["time"] for r in parcel["rules"]):
+            raise HTTPException(409, "Delete this lease’s active monitoring rules first.")
+        records.pop(index)
+        if kind == "rules":
+            active = sum(not event["resolved"] for event in parcel["events"])
+            parcel["status"] = "Critical" if active > 1 else "Flagged" if active else "Awaiting readings"
+            parcel["outlook"] = []
+            if record["metric"] == "temperature":
+                parcel["risk"] = None
+    return {"ok": True}
+
+
+@app.get("/api/parcels/{pid}/observations")
+def observation_export(pid: str, email=Depends(user)):
+    with database() as db:
+        parcel = get(db, pid, email)
+    return {"parcel": parcel["name"], "observations": parcel["observations"],
+            "satellite": parcel.get("satellite")}
+
+
 @app.post("/api/parcels")
 def create(body: Parcel, email=Depends(user)):
     return save_parcel(body, email)

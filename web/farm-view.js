@@ -65,17 +65,29 @@ async function openStudioScene(parcel, refresh, id) {
     <model-viewer id="studioScene" loading="eager" camera-controls camera-orbit="25deg 65deg 86%" touch-action="pan-y" alt="Interactive parcel concept"></model-viewer>
     <small id="sceneStatus" role="status">Loading parcel…</small>
     <a class="link" href="${url}" download="parcel-concept.glb">Download GLB</a>
-    ${id ? "" : '<details><summary>Attach a site image</summary><label>North-up aerial image (JPEG or PNG, under 10 MB)<input id="siteImage" type="file" accept="image/jpeg,image/png"></label><small>Crop the image to the parcel’s bounding rectangle before uploading.</small><small id="imageFeedback" role="status"></small></details>'}
+    ${id ? "" : '<details><summary>Attach a site image</summary><label>North-up aerial image (JPEG or PNG, under 10 MB)<input id="siteImage" type="file" accept="image/jpeg,image/png"></label><small>Crop the image to the parcel’s bounding rectangle before uploading.</small><button id="deleteSiteImage">Delete site image</button><small id="imageFeedback" role="status"></small></details>'}
     ${id ? "" : '<div><button id="loadTerrain" disabled>Load measured terrain</button> <small id="terrainFeedback" role="status"></small></div>'}
     <form id="sceneForm"><label>Proposed feature<textarea required maxlength="3000" name="prompt" placeholder="A timber equipment shed with a pitched roof"></textarea></label>
     <small>The feature is placed at an illustrative size and location.</small><button class="primary">Generate 3D concept</button><p id="generationStatus" role="status"></p></form></section>`);
   const view=$("studioScene"), form=$("sceneForm"), status=$("generationStatus");
   if (!id) void terrainControls(path, view, url);
+  if (!id) {
+    const remove = $("deleteSiteImage");
+    remove.hidden = !parcel.site_image_source;
+    remove.onclick = run(async () => {
+      if (!confirm("Delete the uploaded site image?")) return;
+      await api(path + "/site-image", undefined, "DELETE");
+      parcel.site_image_source = null;
+      remove.hidden = true;
+      view.src = url + "?revision=" + Date.now();
+      $("imageFeedback").textContent = "Site image deleted.";
+    });
+  }
   if (!id) $("siteImage").onchange = async ({target}) => {
     if (!target.files[0]) return;
     const feedback=$("imageFeedback"), fd=new FormData();
     fd.set("file",target.files[0]); target.disabled=true;
-    try { await api(path+"/site-image",fd); feedback.textContent="Image saved."; view.src=url+"?revision="+Date.now(); }
+    try { await api(path+"/site-image",fd); parcel.site_image_source="Uploaded site image"; $("deleteSiteImage").hidden=false; feedback.textContent="Image saved."; view.src=url+"?revision="+Date.now(); }
     catch(error){ feedback.textContent=error.message; }
     finally {target.disabled=false;}
   };

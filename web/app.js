@@ -34,10 +34,9 @@ function notice(msg) {
   $("notice").textContent = msg;
   timer = setTimeout(() => ($("notice").textContent = ""), 7500);
 }
-async function api(path, body) {
-  const opts = {};
+async function api(path, body, method = body === undefined ? "GET" : "POST") {
+  const opts = { method };
   if (body !== undefined) {
-    opts.method = "POST";
     if (body instanceof FormData) opts.body = body;
     else {
       opts.headers = { "Content-Type": "application/json" };
@@ -298,7 +297,7 @@ function detail(p) {
         .join(" · ") +
       '</small><span class="pill">' +
       esc(p.status) +
-      '</span></div><div class="actions"><button id="details">Edit lease details</button><button id="refresh" class="primary">Refresh sensors</button></div></div><div class="stats">' +
+      '</span></div><div class="actions"><button id="deleteParcel">Delete parcel</button><button id="details">Edit lease details</button><button id="refresh" class="primary">Refresh sensors</button></div></div><div class="stats">' +
       [
         [
           "72-hour heat risk",
@@ -314,6 +313,7 @@ function detail(p) {
         .join("") +
       '</div><section class="board"><div class="panel"><h2>Sensor readings</h2>' +
       sensorRows(p) +
+      '<a class="link" target="_blank" href="/api/' + path + 'observations">View all recorded readings (JSON)</a>' +
       (p.outlook || [])
         .map((o) =>
           item(
@@ -331,7 +331,7 @@ function detail(p) {
       p.leases
         .slice()
         .reverse()
-        .map((l) =>
+        .map((l, i) =>
           item(
             "<details><summary>" +
               esc(l.name) +
@@ -347,13 +347,13 @@ function detail(p) {
                   ),
                 )
                 .join("") +
-              "</details>",
+              '</details><button data-list="leases" data-index="' + (p.leases.length - 1 - i) + '">Delete lease</button>',
           ),
         )
         .join("") +
       '</article><article class="panel"><div class="bar"><h2>Monitoring rules</h2><button id="rule">Add rule</button></div>' +
       p.rules
-        .map((r) =>
+        .map((r, i) =>
           item(
             esc(r.clause) +
               "<small>" +
@@ -362,7 +362,7 @@ function detail(p) {
               r.op +
               " " +
               r.limit +
-              "</small>",
+              '</small><button data-list="rules" data-index="' + i + '">Delete rule</button>',
           ),
         )
         .join("") +
@@ -384,13 +384,13 @@ function detail(p) {
             : "") +
           '</small><img class="photo" src="' +
           p.latest_image +
-          '" alt="Imagery difference overlay">'
+          '" alt="Imagery difference overlay"><button id="deleteComparison">Delete comparison preview</button>'
         : "") +
       '</article><article class="panel"><div class="bar"><h2>Contact history</h2><button id="note">Add note</button></div>' +
       p.history
         .slice()
         .reverse()
-        .map((n) => item(esc(n.text) + "<small>" + esc(n.time) + "</small>"))
+        .map((n, i) => item(esc(n.text) + "<small>" + esc(n.time) + '</small><button data-list="history" data-index="' + (p.history.length - 1 - i) + '">Delete note</button>'))
         .join("") +
       '</article><article class="panel"><h2>Reports</h2><div class="actions">' +
       reports
@@ -414,6 +414,27 @@ function detail(p) {
       '</div></article><article class="panel ai-studio"><div class="bar"><h2>Parcel studio</h2><div class="actions"><button id="generateBrief">Generate brief</button><button class="primary" id="generateConcept">Explore in 3D</button></div></div><div id="aiGallery">Loading saved work…</div></article></section>',
   );
   setupStudio(p);
+  $("deleteParcel").onclick = run(async () => {
+    if (!confirm("Delete " + p.name + " and its leases, rules, notes, readings, and saved studio work from this app?")) return;
+    await api("parcels/" + p.id, undefined, "DELETE");
+    await load();
+    notice("Parcel deleted");
+  });
+  document.querySelectorAll("[data-list]").forEach(button => {
+    button.onclick = run(async () => {
+      const {list, index} = button.dataset;
+      const record = p[list][index];
+      if (!confirm(button.textContent + " from " + p.name + "?")) return;
+      await api(path + "records/" + list + "/" + index,
+        list === "rules" ? record : {time: record.time}, "DELETE");
+      await load(p.id);
+    });
+  });
+  if ($("deleteComparison")) $("deleteComparison").onclick = run(async () => {
+    if (!confirm("Delete the current comparison preview? Recorded readings and alert evidence are kept.")) return;
+    await api(path + "comparison", undefined, "DELETE");
+    await load(p.id);
+  });
   $("backPortfolio").onclick = portfolio;
   map = initMap("map", [p]);
   $("refresh").onclick = run(async () => {
