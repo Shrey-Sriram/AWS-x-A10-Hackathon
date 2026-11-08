@@ -88,7 +88,9 @@ function auth(signup = false) {
   portfolioMode = "all";
   $("nav").hidden = true;
   screen(
-    '<section class="auth"><figure><figcaption>Southern Great Plains · NASA Terra / MODIS · June 2024</figcaption></figure><article><h1>Parcel intelligence</h1><p class="muted">Monitor lease obligations and environmental conditions across your land portfolio.</p><form id="auth"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" minlength="10" autocomplete="' +
+    '<section class="auth"><figure><figcaption>Southern Great Plains · NASA Terra / MODIS · June 2024</figcaption></figure><article><h1>' +
+      (signup ? "Create an account" : "Sign in") +
+      '</h1><form id="auth"><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Password<input name="password" type="password" minlength="10" autocomplete="' +
       (signup ? "new-password" : "current-password") +
       '" required></label><button class="primary">' +
       (signup ? "Create account" : "Sign in") +
