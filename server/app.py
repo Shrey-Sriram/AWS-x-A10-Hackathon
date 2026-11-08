@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 
-from . import bedrock, sagemaker
+from . import bedrock, sagemaker, scene, terrain_api
 from .lease_boundary import read_boundary
 from .domain import (
     SIGNALS,
@@ -58,6 +58,9 @@ with sqlite3.connect(DB) as conn:
     CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY,email TEXT,expires TEXT);
     CREATE TABLE IF NOT EXISTS parcels(id TEXT PRIMARY KEY,email TEXT,body TEXT);
     CREATE TABLE IF NOT EXISTS contacts(id TEXT PRIMARY KEY,email TEXT,message TEXT,time TEXT);
+    CREATE TABLE IF NOT EXISTS terrain_jobs(parcel TEXT PRIMARY KEY, job TEXT, info TEXT, model BLOB, updated TEXT);
+    CREATE TABLE IF NOT EXISTS parcel_elevations(parcel TEXT PRIMARY KEY, samples TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS parcel_images(parcel TEXT PRIMARY KEY, source TEXT NOT NULL, jpeg BLOB NOT NULL);
     CREATE TABLE IF NOT EXISTS ai_outputs(
         parcel TEXT NOT NULL, request TEXT NOT NULL, info TEXT NOT NULL, png BLOB,
         PRIMARY KEY(parcel,request)
@@ -205,9 +208,9 @@ def edit(pid, email):
 def parcels(email=Depends(user)):
     with database() as db:
         return [
-            json.loads(row[0])
+            dict(json.loads(row[0]), site_image_source=row[1])
             for row in db.execute(
-                "SELECT body FROM parcels WHERE email=? ORDER BY rowid DESC", (email,)
+                "SELECT p.body,i.source FROM parcels p LEFT JOIN parcel_images i ON i.parcel=p.id WHERE p.email=? ORDER BY p.rowid DESC", (email,)
             )
         ]
 
@@ -685,7 +688,7 @@ def report(
 
 class Generation(BaseModel):
     request_id: UUID
-    kind: Literal["concept", "brief"]
+    kind: Literal["concept", "brief", "concept3d"]
     prompt: str = Field(min_length=1, max_length=3000, pattern=r"\S")
     aspect_ratio: Literal["16:9", "1:1", "9:16"] = "16:9"
 
@@ -695,7 +698,7 @@ def generations(pid: str, email=Depends(user)):
     with database() as db:
         get(db, pid, email)
         rows = db.execute(
-            "SELECT info FROM ai_outputs WHERE parcel=? ORDER BY rowid DESC", (pid,)
+            "SELECT info FROM ai_outputs WHERE parcel=? AND json_extract(info,'$.kind') IN ('brief','concept','concept3d') ORDER BY rowid DESC", (pid,)
         )
         return [
             info for (raw,) in rows if (info := json.loads(raw))["state"] == "ready"
@@ -707,7 +710,7 @@ def generated_image(pid: str, rid: UUID, email=Depends(user)):
     with database() as db:
         get(db, pid, email)
         row = db.execute(
-            "SELECT png FROM ai_outputs WHERE parcel=? AND request=?", (pid, str(rid))
+            "SELECT png FROM ai_outputs WHERE parcel=? AND request=? AND json_extract(info,'$.kind')='concept'", (pid, str(rid))
         ).fetchone()
     if not row or not row[0]:
         raise HTTPException(404, "Image not found")
@@ -716,17 +719,92 @@ def generated_image(pid: str, rid: UUID, email=Depends(user)):
     )
 
 
+def site_image(db, pid):
+    return db.execute("SELECT source,jpeg FROM parcel_images WHERE parcel=?", (pid,)).fetchone()
+
+
+@app.post("/api/parcels/{pid}/site-image")
+def upload_site_image(pid: str, file: UploadFile, email=Depends(user)):
+    from PIL import Image, ImageOps
+    with database() as db:
+        get(db, pid, email)
+    raw = file.file.read(10_000_001)
+    if len(raw) > 10_000_000:
+        raise HTTPException(413, "Choose an image under 10 MB.")
+    try:
+        image = Image.open(io.BytesIO(raw))
+        if image.format not in {"JPEG", "PNG"} or image.width * image.height > 24_000_000:
+            raise ValueError()
+        image.thumbnail((1600, 1600))
+        out = io.BytesIO()
+        ImageOps.exif_transpose(image).convert("RGB").save(out, "JPEG", quality=90)
+    except (ValueError, OSError, Image.DecompressionBombError):
+        raise HTTPException(422, "Choose a readable JPEG or PNG under 24 megapixels.")
+    with database(True) as db:
+        get(db, pid, email)
+        db.execute("INSERT OR REPLACE INTO parcel_images VALUES(?,?,?)", (pid, "Uploaded site image", out.getvalue()))
+    return {"source": "Uploaded site image"}
+
+
+@app.get("/api/parcels/{pid}/site-image")
+def parcel_photo(pid: str, email=Depends(user)):
+    with database() as db:
+        get(db, pid, email)
+        image = site_image(db, pid)
+    if image is None:
+        raise HTTPException(404, "No site image attached.")
+    return Response(image[1], media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+def elevation_grid(db, pid):
+    row = db.execute("SELECT samples FROM parcel_elevations WHERE parcel=?", (pid,)).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+@app.get("/api/parcels/{pid}/terrain")
+def terrain_status(pid: str, email=Depends(user)):
+    with database() as db:
+        return terrain_api.status(db, get(db, pid, email))
+
+
+@app.post("/api/parcels/{pid}/terrain")
+def load_terrain(pid: str, email=Depends(user)):
+    with database(True) as db:
+        return terrain_api.start(db, get(db, pid, email))
+
+
+@app.get("/api/parcels/{pid}/scene.glb")
+def parcel_scene(pid: str, email=Depends(user)):
+    with database() as db:
+        parcel = get(db, pid, email)
+        aerial = site_image(db, pid)
+        elevations = elevation_grid(db, pid)
+        cached = db.execute("SELECT model FROM terrain_jobs WHERE parcel=?", (pid,)).fetchone() if not aerial else None
+    model = cached[0] if cached and cached[0] else scene.build(parcel, aerial=aerial, elevations=elevations)
+    return Response(model, media_type="model/gltf-binary", headers={"Cache-Control": "private, no-store"})
+
+
+@app.get("/api/parcels/{pid}/ai/{rid}/model.glb")
+def saved_scene(pid: str, rid: UUID, email=Depends(user)):
+    with database() as db:
+        get(db, pid, email)
+        row = db.execute("SELECT png FROM ai_outputs WHERE parcel=? AND request=? AND json_extract(info,'$.kind')='concept3d'", (pid, str(rid))).fetchone()
+    if not row or not row[0]:
+        raise HTTPException(404, "Model not found")
+    return Response(row[0], media_type="model/gltf-binary", headers={"Cache-Control":"private, no-store"})
+
+
 @app.post("/api/parcels/{pid}/ai")
 def generate(pid: str, body: Generation, email=Depends(user)):
     rid = str(body.request_id)
-    model = sagemaker.MODEL if body.kind == "concept" else bedrock.TEXT
+    model = {"concept": sagemaker.MODEL, "concept3d": "OpenAI Shap-E", "brief": bedrock.TEXT}[body.kind]
     info = dict(
         id=rid,
         kind=body.kind,
         model=model,
         prompt=body.prompt,
-        region=sagemaker.REGION if body.kind == "concept" else bedrock.REGION,
-        provider="SageMaker" if body.kind == "concept" else "Bedrock",
+        region=sagemaker.REGION if body.kind != "brief" else bedrock.REGION,
+        provider="SageMaker" if body.kind != "brief" else "Bedrock",
         aspect_ratio=body.aspect_ratio,
         time=now().isoformat(),
         state="pending",
@@ -754,7 +832,13 @@ def generate(pid: str, body: Generation, email=Depends(user)):
             (pid, rid, json.dumps(info)),
         )
     try:
-        if body.kind == "concept":
+        if body.kind == "concept3d":
+            with database() as db:
+                aerial = site_image(db, pid)
+                elevations = elevation_grid(db, pid)
+            png = scene.build(parcel, scene.concept_mesh(body.prompt), aerial=aerial, elevations=elevations)
+            extra = {"endpoint": scene.ENDPOINT}
+        elif body.kind == "concept":
             extra, png = sagemaker.image(body.prompt, body.aspect_ratio)
         else:
             extra, png = bedrock.aws_call(

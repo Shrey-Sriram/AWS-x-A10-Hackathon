@@ -411,7 +411,7 @@ function detail(p) {
             "</a>",
         )
         .join("") +
-      '</div></article><article class="panel ai-studio"><div class="bar"><h2>Parcel studio</h2><div class="actions"><button id="generateBrief">Generate brief</button><button class="primary" id="generateConcept">Generate 2D concept</button></div></div><div id="aiGallery">Loading saved work…</div></article></section>',
+      '</div></article><article class="panel ai-studio"><div class="bar"><h2>Parcel studio</h2><div class="actions"><button id="generateBrief">Generate brief</button><button class="primary" id="generateConcept">Explore in 3D</button></div></div><div id="aiGallery">Loading saved work…</div></article></section>',
   );
   setupStudio(p);
   $("backPortfolio").onclick = portfolio;

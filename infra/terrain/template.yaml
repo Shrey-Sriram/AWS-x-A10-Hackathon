@@ -1,0 +1,45 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  TerrainBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  DeadLetters:
+    Type: AWS::SQS::Queue
+  TerrainQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 540
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DeadLetters.Arn
+        maxReceiveCount: 3
+  TerrainWorker:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: worker.zip
+      Handler: worker.handler
+      Runtime: python3.12
+      Timeout: 90
+      MemorySize: 1536
+      Environment:
+        Variables:
+          TERRAIN_BUCKET: !Ref TerrainBucket
+      Policies:
+        - S3WritePolicy:
+            BucketName: !Ref TerrainBucket
+      Events:
+        Jobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt TerrainQueue.Arn
+            BatchSize: 1
+Outputs:
+  Bucket:
+    Value: !Ref TerrainBucket
+  Queue:
+    Value: !Ref TerrainQueue

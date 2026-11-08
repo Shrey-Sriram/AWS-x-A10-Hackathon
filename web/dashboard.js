@@ -78,7 +78,7 @@ function portfolio() {
     parcels.filter((p) => inMode(p, "risk")).length,
     parcels.filter((p) => inMode(p, "unread")).length,
   ];
-  screen(`<section class="portfolio-hero"><div><h1>Land portfolio</h1><p id="acreage"></p></div><button id="new" class="primary">Add parcel</button></section>
+  screen(`<section class="portfolio-hero"><div><h1>Land portfolio</h1><p id="acreage"></p></div><div class="actions"><button id="openFarmView">Explore 3D demo</button><button id="new" class="primary">Add parcel</button></div></section>
     <div class="portfolio-counts" aria-label="Filter portfolio">${modes.map(([key, label]) => `<button class="metric" data-mode="${key}" aria-pressed="${key === portfolioMode}"><span>${label}</span><b></b></button>`).join("")}</div>
     <div class="portfolio-board"><section class="panel map-panel"><h2>Risk map</h2><div id="map" class="map"></div><div class="legend" aria-label="72-hour heat risk"><b>Heat risk</b>${Object.entries(
       palette,
@@ -98,6 +98,7 @@ function portfolio() {
       .map((x) => `<option>${x}</option>`)
       .join("")}</select><button id="reset">Clear filters</button></div>
     <div id="list"></div></section>`);
+  $("openFarmView").onclick = openFarmView;
   $("new").onclick = newParcel;
   const clear = () => {
     portfolioMode = "all";
