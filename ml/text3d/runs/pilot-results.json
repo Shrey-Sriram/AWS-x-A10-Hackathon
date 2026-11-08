@@ -1,0 +1,20 @@
+{
+  "base": "Shap-E text300M",
+  "steps": 64,
+  "train": [
+    "e889560c37cc4703ae8be3e039f323b9",
+    "7a1b529da9a2427c9c0bd9c7ec0f334f",
+    "5be3342732c54d009e566bcd48797892",
+    "96db2416305249569097ce5d8a1f8e1d",
+    "1525eedeb57a4aea938ed30d5db5a0c9",
+    "15cdc2e4f39d40d1b15f81a0ca7bfceb",
+    "eb41b98b88be42d2906793126c4b4f63"
+  ],
+  "validation": [
+    "80e0854c996440dbb4126fb0bcde7336",
+    "e9e43f55fe7849a285b24afc64e23b38",
+    "ae22e615676745d7bf7baf0de5d2e6ba"
+  ],
+  "baseline_mse": 0.26886160175005597,
+  "final_mse": 0.2676466554403305
+}
