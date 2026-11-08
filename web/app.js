@@ -169,13 +169,14 @@ function initMap(id, items, heat = true) {
 }
 function newParcel() {
   modal(
-    '<h2>Add parcel</h2><form id="parcel"><label>Parcel name<input name="name" required maxlength="120"></label><div class="split"><label>Company<input name="company"></label><label>Renewal date<input type="date" name="renewal"></label></div><label>Import GeoJSON or KML<input id="geo" type="file" accept=".geojson,.json,.kml"></label><small>Or click at least three boundary points on the map. Additional imported polygons become land-use layers.</small><div id="drawMap" class="map mini"></div><div class="actions"><button type="button" id="undo">Undo point</button><small id="points">0 points</small></div><label>Buffer distance (meters)<input name="buffer_m" type="number" min="0" max="10000" value="0"></label><button class="primary">Save parcel</button></form>',
+    '<h2>Add parcel</h2><form id="parcel"><label>Parcel name<input name="name" required maxlength="120"></label><div class="split"><label>Company<input name="company"></label><label>Renewal date<input type="date" name="renewal"></label></div><label>Read boundary from lease exhibit<input id="boundaryLease" type="file" accept=".pdf,.docx"></label><small>Use a text PDF or DOCX with one embedded GeoJSON polygon or a boundary table labeled Latitude and Longitude (decimal degrees).</small><label>Import GeoJSON or KML<input id="geo" type="file" accept=".geojson,.json,.kml"></label><small>Or click at least three boundary points on the map. Additional imported polygons become land-use layers.</small><div id="drawMap" class="map mini"></div><div class="actions"><button type="button" id="undo">Undo point</button><small id="points">0 points</small></div><label>Buffer distance (meters)<input name="buffer_m" type="number" min="0" max="10000" value="0"></label><button class="primary">Save parcel</button></form>',
   );
   const m = initMap("drawMap", []),
     points = [];
   let layers = [],
     shapeLayer;
   const clean = () => {
+    version++;
     m.remove();
     $("dialog").removeEventListener("close", clean);
   };
@@ -186,26 +187,78 @@ function newParcel() {
     $("points").textContent = points.length + " points";
   }
   m.on("click", (e) => {
+    version++;
+    pending = false;
+    leaseFile = null;
+    $("geo").value = $("boundaryLease").value = "";
     layers = [];
     points.push(e.latlng);
     paint();
   });
   $("undo").onclick = () => {
+    version++;
+    pending = false;
+    leaseFile = null;
+    $("geo").value = $("boundaryLease").value = "";
     layers = [];
     points.pop();
     paint();
   };
-  $("geo").onchange = run(async (e) => {
-    const fd = new FormData();
-    fd.set("file", e.target.files[0]);
-    layers = await api("map/import", fd);
+  let leaseFile = null,
+    version = 0,
+    pending = false;
+  function resetSelection() {
+    version++;
+    leaseFile = null;
+    layers = [];
     points.length = 0;
-    if (shapeLayer) m.removeLayer(shapeLayer);
-    shapeLayer = L.geoJSON(layers[0].geometry).addTo(m);
-    m.fitBounds(shapeLayer.getBounds());
-    $("points").textContent = layers.length + " polygon(s) imported";
-  });
+    pending = false;
+    paint();
+  }
+  async function preview(file, kind) {
+    resetSelection();
+    const ticket = version;
+    if (!file) return;
+    pending = true;
+    const fd = new FormData();
+    fd.set("file", file);
+    $("points").textContent = "Reading boundary…";
+    try {
+      const response = await api(
+        kind === "lease" ? "map/lease-preview" : "map/import",
+        fd,
+      );
+      if (ticket !== version || !$("dialog").open) return;
+      layers = kind === "lease" ? [{ geometry: response.geometry }] : response;
+      leaseFile = kind === "lease" ? file : null;
+      if (shapeLayer) m.removeLayer(shapeLayer);
+      shapeLayer = L.geoJSON(layers[0].geometry).addTo(m);
+      m.fitBounds(shapeLayer.getBounds());
+      $("points").textContent = leaseFile
+        ? response.method +
+          (response.page ? " · page " + response.page : "") +
+          " · Review the outline before saving."
+        : layers.length + " polygon(s) imported";
+    } catch (e) {
+      if (ticket === version) {
+        $("points").textContent = e.message;
+        layers = [];
+        leaseFile = null;
+      }
+    } finally {
+      if (ticket === version) pending = false;
+    }
+  }
+  $("geo").onchange = (e) => {
+    $("boundaryLease").value = "";
+    preview(e.target.files[0], "map");
+  };
+  $("boundaryLease").onchange = (e) => {
+    $("geo").value = "";
+    preview(e.target.files[0], "lease");
+  };
   $("parcel").onsubmit = run(async (e) => {
+    if (pending) throw Error("Wait for the boundary preview.");
     if (!layers.length && points.length < 3)
       throw Error("Draw at least three points or import a boundary");
     const data = Object.fromEntries(new FormData(e.target));
@@ -213,7 +266,13 @@ function newParcel() {
       ? layers[0].geometry
       : shapeLayer.toGeoJSON().geometry;
     data.layers = layers.slice(1);
-    const p = await api("parcels", data);
+    let p;
+    if (leaseFile) {
+      const fd = new FormData();
+      fd.set("file", leaseFile);
+      fd.set("parcel", JSON.stringify(data));
+      p = await api("parcels/from-lease", fd);
+    } else p = await api("parcels", data);
     $("dialog").close();
     await load(p.id);
   });

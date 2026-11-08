@@ -225,3 +225,64 @@ class ParcelWorkflow(unittest.TestCase):
             invoke.return_value = {"Body": BytesIO(b'{"data":[]}')}
             self.assertEqual(attempt().status_code, 502)
             self.assertEqual(self.client.get(self.path + "/ai").json(), [])
+
+    def test_lease_boundary_preview_and_atomic_save(self):
+        import json
+        from server.lease_boundary import read_boundary
+
+        raw = BytesIO()
+        with ZipFile(raw, "w") as f:
+            rows = [
+                ["Latitude", "Longitude"],
+                ["43.642", "-116.645"],
+                ["43.642", "-116.640"],
+                ["43.645", "-116.640"],
+            ]
+            table = "".join(
+                "<w:tr>"
+                + "".join(
+                    "<w:tc><w:p><w:r><w:t>" + v + "</w:t></w:r></w:p></w:tc>"
+                    for v in row
+                )
+                + "</w:tr>"
+                for row in rows
+            )
+            f.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="urn:word"><w:body><w:p><w:r><w:t>Boundary coordinates</w:t></w:r></w:p><w:tbl>'
+                + table
+                + "</w:tbl></w:body></w:document>",
+            )
+        files = {"file": ("exhibit.docx", raw.getvalue())}
+        preview = self.client.post("/api/map/lease-preview", files=files)
+        preview.raise_for_status()
+        g = preview.json()["geometry"]
+        self.assertEqual(g["coordinates"][0][0], [-116.645, 43.642])
+        body = {"name": "Idaho test", "geometry": g}
+        res = self.client.post(
+            "/api/parcels/from-lease", data={"parcel": json.dumps(body)}, files=files
+        )
+        res.raise_for_status()
+        self.assertEqual(res.json()["leases"][0]["name"], "exhibit.docx")
+        self.assertEqual(
+            res.json()["boundary_source"]["method"], "Boundary coordinate table"
+        )
+        count = len(self.client.get("/api/parcels").json())
+        body["geometry"] = {
+            "type": "Polygon",
+            "coordinates": [[[1, 1], [1, 2], [2, 2], [1, 1]]],
+        }
+        self.assertEqual(
+            self.client.post(
+                "/api/parcels/from-lease",
+                data={"parcel": json.dumps(body)},
+                files=files,
+            ).status_code,
+            422,
+        )
+        self.assertEqual(len(self.client.get("/api/parcels").json()), count)
+        self.assertEqual(read_boundary([(1, json.dumps(g))])["page"], 1)
+        with self.assertRaises(ValueError):
+            read_boundary([(1, "123 Demo Lane, APN 100.")])
+        with self.assertRaises(ValueError):
+            read_boundary([(1, json.dumps(g)), (2, json.dumps(g))])

@@ -15,16 +15,19 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 import requests
-from fastapi import Depends, FastAPI, HTTPException, Request, Response, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 
 from . import bedrock, sagemaker
+from .lease_boundary import read_boundary
 from .domain import (
     SIGNALS,
     buffer_zone,
     extract,
+    document_pages,
+    extract_clauses,
     geometry,
     heat_risk,
     image_change,
@@ -211,6 +214,10 @@ def parcels(email=Depends(user)):
 
 @app.post("/api/parcels")
 def create(body: Parcel, email=Depends(user)):
+    return save_parcel(body, email)
+
+
+def save_parcel(body, email, lease=None, boundary_source=None):
     try:
         from pyproj import Geod
         from shapely import orient_polygons
@@ -232,7 +239,8 @@ def create(body: Parcel, email=Depends(user)):
             acres=round(abs(area) / 4046.8564224, 2),
             buffer=buffer_zone(g, body.buffer_m) if body.buffer_m else None,
             rules=[],
-            leases=[],
+            leases=[lease] if lease else [],
+            boundary_source=boundary_source,
             history=[],
             observations=[],
             events=[],
@@ -251,6 +259,40 @@ def read_file(file):
     if len(raw) > 10_000_000:
         raise HTTPException(413, "File exceeds 10 MB")
     return raw
+
+
+@app.post("/api/map/lease-preview")
+def lease_preview(file: UploadFile, email=Depends(user)):
+    raw = read_file(file)
+    try:
+        return read_boundary(document_pages(file.filename.lower(), raw))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Could not read this PDF or DOCX exhibit.") from exc
+
+
+@app.post("/api/parcels/from-lease")
+def create_from_lease(file: UploadFile, parcel: str = Form(...), email=Depends(user)):
+    raw = read_file(file)
+    try:
+        body = Parcel.model_validate_json(parcel)
+        pages = document_pages(file.filename.lower(), raw)
+        preview = read_boundary(pages)
+        if not shape(preview["geometry"]).equals(shape(body.geometry)):
+            raise ValueError(
+                "The uploaded exhibit differs from the preview. Select the file again."
+            )
+        source = {k: v for k, v in preview.items() if k != "geometry"}
+        source["filename"] = file.filename
+        lease = dict(
+            name=file.filename, time=now().isoformat(), clauses=extract_clauses(pages)
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(422, "Could not read this PDF or DOCX exhibit.") from exc
+    return save_parcel(body, email, lease, source)
 
 
 @app.post("/api/map/import")

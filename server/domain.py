@@ -68,7 +68,7 @@ def suggested_rule(text):
     )
 
 
-def extract(name, raw):
+def document_pages(name, raw):
     if name.endswith(".pdf"):
         pages = [
             (i + 1, p.extract_text() or "")
@@ -79,11 +79,35 @@ def extract(name, raw):
             if doc.getinfo("word/document.xml").file_size > 10_000_000:
                 raise ValueError("Word document too large")
             root = ET.fromstring(doc.read("word/document.xml"))
-        pages = [
-            (None, "\n".join("".join(p.itertext()) for p in root.findall(".//{*}p")))
-        ]
+        rows = []
+
+        def walk(node):
+            tag = node.tag.rsplit("}", 1)[-1]
+            if tag == "tr":
+                rows.append(
+                    " | ".join(
+                        " ".join("".join(p.itertext()) for p in cell.findall(".//{*}p"))
+                        for cell in node.findall("{*}tc")
+                    )
+                )
+            elif tag == "p":
+                rows.append("".join(node.itertext()))
+            else:
+                for child in node:
+                    walk(child)
+
+        walk(root)
+        pages = [(None, "\n".join(rows))]
     else:
         raise ValueError("Choose a PDF or DOCX file")
+    return pages
+
+
+def extract(name, raw):
+    return extract_clauses(document_pages(name, raw))
+
+
+def extract_clauses(pages):
     clauses = []
     for page, text in pages:
         for line in re.split(r"(?<=[.!?])\s+|\n\s*\n", text):
