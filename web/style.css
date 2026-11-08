@@ -611,3 +611,27 @@ dialog:has(.farm-view) { width:min(920px,94vw); max-width:94vw; padding:clamp(14
 .farm-view form { margin-top:16px; }
 .farm-view small { display:block; margin:6px 0; }
 @media (max-width:700px), (max-height:760px) { .farm-view model-viewer { height:clamp(180px,37dvh,360px); } }
+
+/* Use the available viewport for maps, parcel records and 3D scenes. */
+main {width:100%;max-width:none;min-height:calc(100dvh - 56px);padding-inline:clamp(12px,2.6vw,48px)}
+header {padding-inline:clamp(12px,2.6vw,48px);height:auto;min-height:56px;gap:10px;flex-wrap:wrap}
+nav {flex-wrap:wrap}
+.auth {max-width:none;margin:0;min-height:calc(100dvh - 112px)}
+.ai-output img {max-width:min(800px,100%)}
+.map-panel .map {height:clamp(245px,37dvh,590px)}
+.demo-choices {margin:1rem 0 2rem}
+.demo-choices [aria-current=page] {background:#224937;color:white}
+.demo-layout {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:clamp(18px,3vw,52px)}
+.demo-layout section {min-width:0}
+.demo-layout p {margin:1rem 0;line-height:1.45}
+.demo-map,.demo-layout model-viewer {display:block;width:100%;height:clamp(280px,53dvh,710px);background:#e4eadd}
+.demo-layout #select,.demo-layout #download {margin-top:12px}
+@media (max-width:760px) {
+  .demo-layout {grid-template-columns:minmax(0,1fr)}
+  .demo-map,.demo-layout model-viewer {height:clamp(230px,40dvh,420px)}
+  .split {grid-template-columns:minmax(0,1fr)}
+  nav .link,nav button {padding:6px;font-size:12px}
+  header {padding-block:6px}
+  .stats,.directory-filters {grid-template-columns:repeat(2,minmax(0,1fr))}
+  .detail,.board,.portfolio-board {grid-template-columns:minmax(0,1fr)}
+}

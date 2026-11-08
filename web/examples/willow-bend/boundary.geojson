@@ -1,0 +1,65 @@
+{
+  "type": "Feature",
+  "properties": {
+    "name": "Willow Bend Field",
+    "company": "Shrey's Company (demo)",
+    "description": "Fictional Idaho parcel with a northeast notch and a rectangular interior exclusion. Demonstration only."
+  },
+  "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+      [
+        [
+          -116.71,
+          43.681
+        ],
+        [
+          -116.706,
+          43.681
+        ],
+        [
+          -116.706,
+          43.6824
+        ],
+        [
+          -116.7075,
+          43.6824
+        ],
+        [
+          -116.7075,
+          43.6834
+        ],
+        [
+          -116.71,
+          43.6834
+        ],
+        [
+          -116.71,
+          43.681
+        ]
+      ],
+      [
+        [
+          -116.7094,
+          43.6818
+        ],
+        [
+          -116.7094,
+          43.6823
+        ],
+        [
+          -116.7089,
+          43.6823
+        ],
+        [
+          -116.7089,
+          43.6818
+        ],
+        [
+          -116.7094,
+          43.6818
+        ]
+      ]
+    ]
+  }
+}

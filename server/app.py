@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 
 from . import county, bedrock, sagemaker, scene, terrain_api
+from .parcel_demo import router as demo_router
 from .lease_boundary import read_boundary
 from .domain import (
     SIGNALS,
@@ -51,6 +52,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="parcelsite", lifespan=lifespan)
+app.include_router(demo_router)
 DB = Path(os.environ.get("LEASESENSE_DB", "data/leasesense.sqlite"))
 DB.parent.mkdir(exist_ok=True, parents=True)
 with sqlite3.connect(DB) as conn:
