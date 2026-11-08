@@ -1,0 +1,28 @@
+git : fatal: not a git repository (or any of the parent directories): .git
+At line:1 char:1
++ git rev-parse --is-inside-work-tree 2>&1 | Out-String | Set-Content _ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (fatal: not a gi...ectories): .git:Strin 
+   g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+git : fatal: not a git repository (or any of the parent directories): .git
+At line:1 char:116
++ ... xt; "----REMOTE----" | Add-Content _g.txt; git remote -v 2>&1 | Out-S ...
++                                                ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (fatal: not a gi...ectories): .git:Strin 
+   g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+----STATUS----
+git : fatal: not a git repository (or any of the parent directories): .git
+At line:1 char:209
++ ... g.txt; "----STATUS----" | Add-Content _g.txt; git status 2>&1 | Out-S ...
++                                                   ~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (fatal: not a gi...ectories): .git:Strin 
+   g) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+

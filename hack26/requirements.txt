@@ -1,0 +1,7 @@
+# Local tooling for deploying and calling the endpoint (NOT installed in the
+# serving container -- see model/code/requirements.txt for that).
+# Pin to the stable SageMaker SDK 2.x line. The 3.x SDK restructured modules
+# (no sagemaker.pytorch, different Model API) and is not what this project targets.
+sagemaker>=2.219.0,<3.0.0
+boto3>=1.34.0
+python-dotenv>=1.0.0

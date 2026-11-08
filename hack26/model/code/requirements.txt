@@ -1,0 +1,5 @@
+# Installed INSIDE the SageMaker serving container at startup.
+# The base PyTorch DLC already provides torch + CUDA, so we don't pin it here.
+git+https://github.com/openai/shap-e.git
+trimesh>=4.0.0
+pyyaml>=6.0
