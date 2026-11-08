@@ -79,3 +79,7 @@ The integration tests exercise document extraction, rule evaluation, duplicate f
 The July 2025 pitch credits Bobby Bilo, Yohan Kim, Hasan Onallah and Arnav Nair. This repository contains a new implementation of the pitch workflow.
 
 Weather data comes from [WeatherBench 2](https://weatherbench2.readthedocs.io/en/latest/data-guide.html), [Open-Meteo historical weather](https://open-meteo.com/en/docs/historical-weather-api), [weather forecasts](https://open-meteo.com/en/docs) and [air quality](https://open-meteo.com/en/docs/air-quality-api). Satellite imagery, including the sign-in image, comes from [NASA GIBS](https://nasa-gibs.github.io/gibs-api-docs/). Map tiles use [OpenStreetMap contributors](https://www.openstreetmap.org/copyright). Leaflet's license is included in `web/vendor/`.
+
+## Architecture and evidence
+
+See the [stack and model inventory](docs/stack.md) for what each layer does and the [technical whitepaper](docs/technical-whitepaper.md) for data sources, evaluation and limitations. The interactive parcel uses measured elevation where available. Generative models are used for briefs and illustrative concepts. See [Shap-E training](ml/text3d/README.md) for the separate GPU experiment.
