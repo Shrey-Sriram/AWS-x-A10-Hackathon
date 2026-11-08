@@ -168,10 +168,12 @@ function initMap(id, items, heat = true) {
 }
 function newParcel() {
   modal(
-    '<h2>Add parcel</h2><form id="parcel"><label>Parcel name<input name="name" required maxlength="120"></label><div class="split"><label>Company<input name="company"></label><label>Renewal date<input type="date" name="renewal"></label></div><section class="exhibit-guide"><h3>Upload a parcel boundary</h3><label>Choose a GeoJSON or KML file<input id="geo" type="file" accept=".geojson,.json,.kml"></label><small>For a real parcel, search your county GIS portal by parcel ID and export its boundary as GeoJSON or KML.</small><a class="link" href="/examples/idaho-demo.geojson" download="idaho-demo.geojson">Download a fictional Idaho sample (.geojson)</a></section><section class="exhibit-guide" aria-labelledby="exhibitHeading"><h3 id="exhibitHeading">Lease exhibit requirements</h3><div id="exhibitRequirements"><ul><li>Use a PDF or Word (.docx) file up to 10 MB with selectable text. Run OCR first if the exhibit is scanned.</li><li>Include one parcel boundary in WGS84 decimal degrees, either as embedded GeoJSON (Polygon or MultiPolygon) or as a coordinate table.</li><li>For a table, put “Boundary” immediately above columns labeled “Longitude” and “Latitude” in either order. List at least three distinct corners in perimeter order, one per row, without crossing sides. Keep the table together on one page.</li></ul><p>If the exhibit gives only an address, parcel ID, acreage, or survey bearings, import a boundary file or draw the outline below.</p></div><label>Read boundary from lease exhibit<input id="boundaryLease" type="file" accept=".pdf,.docx" aria-describedby="exhibitRequirements"></label></section><small>Or click at least three boundary points on the map. Additional imported polygons become land-use layers.</small><div id="drawMap" class="map mini"></div><div class="actions"><button type="button" id="undo">Undo point</button><small id="points">0 points</small></div><label>Buffer distance (meters)<input name="buffer_m" type="number" min="0" max="10000" value="0"></label><button class="primary">Save parcel</button></form>',
+    '<h2>Add parcel</h2><form id="parcel"><label>Parcel name<input name="name" required maxlength="120"></label><div class="split"><label>Company<input name="company"></label><label>Renewal date<input type="date" name="renewal"></label></div><section class="exhibit-guide"><h3>Find your land</h3><label>Boundary method<select id="boundaryMode"><option value="county">Select a parcel on the map · Ada County, Idaho</option><option value="draw">Draw a boundary on the map</option></select></label><p id="mapHint">Click inside your property. Its county boundary will update automatically after you save.</p><div id="drawMap" class="map mini"></div><div class="actions"><button type="button" id="undo" hidden>Undo point</button><small id="points" role="status"></small></div></section><details><summary>Use a boundary file or lease exhibit</summary><section class="exhibit-guide"><h3>Upload a parcel boundary</h3><label>Choose a GeoJSON or KML file<input id="geo" type="file" accept=".geojson,.json,.kml"></label><small>For a real parcel, search your county GIS portal by parcel ID and export its boundary as GeoJSON or KML.</small><a class="link" href="/examples/idaho-demo.geojson" download="idaho-demo.geojson">Download a fictional Idaho sample (.geojson)</a></section><section class="exhibit-guide" aria-labelledby="exhibitHeading"><h3 id="exhibitHeading">Lease exhibit requirements</h3><div id="exhibitRequirements"><ul><li>Use a PDF or Word (.docx) file up to 10 MB with selectable text. Run OCR first if the exhibit is scanned.</li><li>Include one parcel boundary in WGS84 decimal degrees, either as embedded GeoJSON (Polygon or MultiPolygon) or as a coordinate table.</li><li>For a table, put “Boundary” immediately above columns labeled “Longitude” and “Latitude” in either order. List at least three distinct corners in perimeter order, one per row, without crossing sides. Keep the table together on one page.</li></ul><p>If the exhibit gives only an address, parcel ID, acreage, or survey bearings, import a boundary file or draw the outline below.</p></div><label>Read boundary from lease exhibit<input id="boundaryLease" type="file" accept=".pdf,.docx" aria-describedby="exhibitRequirements"></label></section></details><label>Buffer distance (meters)<input name="buffer_m" type="number" min="0" max="10000" value="0"></label><button class="primary">Save parcel</button></form>',
   );
   const m = initMap("drawMap", []),
     points = [];
+  m.setView([43.629304, -116.323132], 16);
+  let countyNumber = null;
   let layers = [],
     shapeLayer;
   const clean = () => {
@@ -185,7 +187,41 @@ function newParcel() {
     shapeLayer = L.polygon(points).addTo(m);
     $("points").textContent = points.length + " points";
   }
-  m.on("click", (e) => {
+  $("boundaryMode").onchange = () => {
+    resetSelection();
+    $("geo").value = $("boundaryLease").value = "";
+    const draw = $("boundaryMode").value === "draw";
+    $("undo").hidden = !draw;
+    $("mapHint").textContent = draw ? "Click at least three corners in order." :
+      "Click inside your property. Its county boundary will update automatically after you save.";
+  };
+  m.on("click", async (e) => {
+    if ($("boundaryMode").value === "county") {
+      resetSelection();
+      $("geo").value = $("boundaryLease").value = "";
+      const ticket = version;
+      pending = true;
+      $("points").textContent = "Finding county parcel…";
+      try {
+        const match = await api("map/county-parcel", {lon:e.latlng.lng, lat:e.latlng.lat});
+        if (ticket !== version) return;
+        countyNumber = match.number;
+        layers = [{geometry: match.geometry}];
+        m.removeLayer(shapeLayer);
+        shapeLayer = L.geoJSON(match.geometry).addTo(m);
+        m.fitBounds(shapeLayer.getBounds());
+        $("points").textContent = "Parcel " + countyNumber + " · Check the outline, then save.";
+        const field = $("parcel").elements.name;
+        if (!field.value || field.value === field.dataset.suggested) {
+          field.value = field.dataset.suggested = "Parcel " + countyNumber;
+        }
+      } catch (error) {
+        if (ticket === version) $("points").textContent = error.message;
+      } finally {
+        if (ticket === version) pending = false;
+      }
+      return;
+    }
     version++;
     pending = false;
     leaseFile = null;
@@ -207,6 +243,7 @@ function newParcel() {
     version = 0,
     pending = false;
   function resetSelection() {
+    countyNumber = null;
     version++;
     leaseFile = null;
     layers = [];
@@ -271,6 +308,8 @@ function newParcel() {
       fd.set("file", leaseFile);
       fd.set("parcel", JSON.stringify(data));
       p = await api("parcels/from-lease", fd);
+    } else if (countyNumber) {
+      p = await api("parcels/from-county", {...data, number: countyNumber});
     } else p = await api("parcels", data);
     $("dialog").close();
     await load(p.id);
@@ -327,7 +366,9 @@ function detail(p) {
         .join("") +
       "<small>" +
       esc(p.feed_notice || "") +
-      '</small></div><div class="panel"><h2>Parcel boundary</h2><div id="map" class="map mini"></div></div></section><section class="detail"><article class="panel"><div class="bar"><h2>Lease documents</h2><button id="upload">Upload lease</button></div>' +
+      '</small></div><div class="panel"><h2>Parcel boundary</h2>' +
+      (p.boundary_source?.provider === "Ada County" ? "<small>Ada County · " + esc(p.boundary_source.number) + " · Last checked " + esc(localTime(p.boundary_source.checked)) + (p.boundary_source.message ? " · Showing last saved outline: " + esc(p.boundary_source.message) : "") + "</small>" : '<button id="linkCounty">Link to Ada County map</button>') +
+      '<a class="link" href="/api/' + path + 'boundary.geojson" download="parcel.geojson">Current GeoJSON</a><div id="map" class="map mini"></div></div></section><section class="detail"><article class="panel"><div class="bar"><h2>Lease documents</h2><button id="upload">Upload lease</button></div>' +
       p.leases
         .slice()
         .reverse()
@@ -414,6 +455,17 @@ function detail(p) {
       '</div></article><article class="panel ai-studio"><div class="bar"><h2>Parcel studio</h2><div class="actions"><button id="generateBrief">Generate brief</button><button class="primary" id="generateConcept">Explore in 3D</button></div></div><div id="aiGallery">Loading saved work…</div></article></section>',
   );
   setupStudio(p);
+  if ($("linkCounty")) $("linkCounty").onclick = run(async () => {
+    const match = await api(path + "county-preview");
+    modal('<h2>Link county parcel ' + esc(match.number) + '</h2><p>Review the county outline below. Linking replaces this parcel’s working boundary and keeps it updated.</p><div class="map mini" id="countyPreviewMap"></div><button id="confirmCounty" class="primary">Use this boundary</button>');
+    const previewMap = initMap("countyPreviewMap", [{geometry: match.geometry}], false);
+    $("dialog").addEventListener("close", () => previewMap.remove(), {once:true});
+    $("confirmCounty").onclick = run(async () => {
+      await api(path + "county-link", {number:match.number});
+      $("dialog").close();
+      await load(p.id);
+    });
+  });
   $("deleteParcel").onclick = run(async () => {
     if (!confirm("Delete " + p.name + " and its leases, rules, notes, readings, and saved studio work from this app?")) return;
     await api("parcels/" + p.id, undefined, "DELETE");

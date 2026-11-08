@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, FiniteFloat
 from shapely.geometry import shape
 
-from . import bedrock, sagemaker, scene, terrain_api
+from . import county, bedrock, sagemaker, scene, terrain_api
 from .lease_boundary import read_boundary
 from .domain import (
     SIGNALS,
@@ -37,12 +37,13 @@ from .domain import (
 
 @asynccontextmanager
 async def lifespan(app):
-    from .monitor import loop
+    from .monitor import loop, boundary_loop
 
     stop = threading.Event()
     worker = threading.Thread(target=loop, args=(stop,), daemon=True)
     if os.environ.get("LEASESENSE_MONITOR", "1") == "1":
         worker.start()
+        threading.Thread(target=boundary_loop, args=(stop,), daemon=True).start()
     try:
         yield
     finally:
@@ -275,12 +276,116 @@ def delete_record(pid: str, kind: Literal["rules", "leases", "history"], index: 
     return {"ok": True}
 
 
+@app.get("/api/parcels/{pid}/boundary.geojson")
+def current_boundary(pid: str, email=Depends(user)):
+    with database() as db:
+        p = get(db, pid, email)
+    feature = {"type": "Feature", "id": pid, "geometry": p["geometry"],
+               "properties": {"name": p["name"], "acres": p["acres"]}}
+    return Response(json.dumps(feature), media_type="application/geo+json",
+                    headers={"Cache-Control": "private, no-store"})
+
+
 @app.get("/api/parcels/{pid}/observations")
 def observation_export(pid: str, email=Depends(user)):
     with database() as db:
         parcel = get(db, pid, email)
     return {"parcel": parcel["name"], "observations": parcel["observations"],
             "satellite": parcel.get("satellite")}
+
+
+class MapPoint(BaseModel):
+    lon: float = Field(ge=-180, le=180)
+    lat: float = Field(ge=-90, le=90)
+
+
+@app.post("/api/map/county-parcel")
+def county_preview(body: MapPoint, email=Depends(user)):
+    return county.lookup(point=(body.lon, body.lat))
+
+
+class CountyParcel(LeaseDetails):
+    name: str = Field(min_length=1, max_length=120)
+    number: str = Field(min_length=1, max_length=100)
+    buffer_m: float = Field(default=0, ge=0, le=10000)
+
+
+@app.post("/api/parcels/from-county")
+def from_county(body: CountyParcel, email=Depends(user)):
+    found = county.lookup(number=body.number)
+    record = Parcel(**body.model_dump(exclude={"number"}), geometry=found["geometry"])
+    return save_parcel(record, email, boundary_source={
+        "provider": "Ada County", "number": found["number"], "checked": now().isoformat()
+    })
+
+
+def acres_for(g):
+    from pyproj import Geod
+    from shapely import orient_polygons
+
+    area, _ = Geod(ellps="WGS84").geometry_area_perimeter(orient_polygons(shape(g)))
+    return round(abs(area) / 4046.8564224, 2)
+
+
+def sync_county(pid, email, number):
+    try:
+        found = county.lookup(number=number)
+        message = ""
+    except HTTPException as exc:
+        found = None
+        message = exc.detail
+    with database(True) as db:
+        parcel = get(db, pid, email)
+        source = parcel.get("boundary_source") or {}
+        if source.get("provider") != "Ada County" or source.get("number") != number:
+            return
+        source.update(checked=now().isoformat(), message=message)
+        if found:
+            apply_boundary(db, parcel, found)
+        db.execute("UPDATE parcels SET body=? WHERE id=?", (json.dumps(parcel), pid))
+
+
+def apply_boundary(db, parcel, found):
+    pid = parcel["id"]
+    source = parcel["boundary_source"]
+    if not shape(found["geometry"]).equals(shape(parcel["geometry"])):
+        g = found["geometry"]
+        parcel.update(geometry=g, acres=acres_for(g),
+                      buffer=buffer_zone(g, parcel["buffer_m"]) if parcel["buffer_m"] else None)
+        for table in ("terrain_jobs", "parcel_elevations"):
+            db.execute(f"DELETE FROM {table} WHERE parcel=?", (pid,))
+        source["changed"] = source["checked"]
+        db.execute("UPDATE parcel_images SET source=? WHERE parcel=?",
+                   ("Site image from earlier boundary", pid))
+
+
+@app.get("/api/parcels/{pid}/county-preview")
+def existing_county_preview(pid: str, email=Depends(user)):
+    with database() as db:
+        inside = shape(get(db, pid, email)["geometry"]).representative_point()
+    return county.lookup(point=(inside.x, inside.y))
+
+
+class CountyLink(BaseModel):
+    number: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/api/parcels/{pid}/county-link")
+def link_county(pid: str, body: CountyLink, email=Depends(user)):
+    found = existing_county_preview(pid, email)
+    if found["number"] != body.number:
+        raise HTTPException(409, "The county match changed. Preview it again.")
+    with database(True) as db:
+        p = get(db, pid, email)
+        old = p.get("boundary_source") or {}
+        if old.get("provider") == "Ada County":
+            raise HTTPException(409, "Already linked. Refresh this parcel.")
+        p["boundary_source"] = {"provider": "Ada County", "number": body.number,
+                                "checked": now().isoformat(), "previous_source": old,
+                                "previous_geometry": p["geometry"]}
+        apply_boundary(db, p, found)
+        db.execute("UPDATE parcels SET body=? WHERE id=?", (json.dumps(p), pid))
+    return {"ok": True}
 
 
 @app.post("/api/parcels")
@@ -290,11 +395,7 @@ def create(body: Parcel, email=Depends(user)):
 
 def save_parcel(body, email, lease=None, boundary_source=None):
     try:
-        from pyproj import Geod
-        from shapely import orient_polygons
-
         g = geometry(body.geometry)
-        area, _ = Geod(ellps="WGS84").geometry_area_perimeter(orient_polygons(shape(g)))
         layers = [
             dict(
                 label=str(layer.get("label", "Land use")),
@@ -307,7 +408,7 @@ def save_parcel(body, email, lease=None, boundary_source=None):
             id=uuid4().hex,
             geometry=g,
             layers=layers,
-            acres=round(abs(area) / 4046.8564224, 2),
+            acres=acres_for(g),
             buffer=buffer_zone(g, body.buffer_m) if body.buffer_m else None,
             rules=[],
             leases=[lease] if lease else [],
@@ -846,6 +947,8 @@ def parcel_scene(pid: str, email=Depends(user)):
     with database() as db:
         parcel = get(db, pid, email)
         aerial = site_image(db, pid)
+        if aerial and aerial[0] == "Site image from earlier boundary":
+            aerial = None
         elevations = elevation_grid(db, pid)
         cached = db.execute("SELECT model FROM terrain_jobs WHERE parcel=?", (pid,)).fetchone() if not aerial else None
     model = cached[0] if cached and cached[0] else scene.build(parcel, aerial=aerial, elevations=elevations)
@@ -903,6 +1006,8 @@ def generate(pid: str, body: Generation, email=Depends(user)):
         if body.kind == "concept3d":
             with database() as db:
                 aerial = site_image(db, pid)
+                if aerial and aerial[0] == "Site image from earlier boundary":
+                    aerial = None
                 elevations = elevation_grid(db, pid)
             png = scene.build(parcel, scene.concept_mesh(body.prompt), aerial=aerial, elevations=elevations)
             extra = {"endpoint": scene.ENDPOINT}

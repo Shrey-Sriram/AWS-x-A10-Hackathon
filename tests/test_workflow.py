@@ -51,6 +51,25 @@ class ParcelWorkflow(unittest.TestCase):
         self.client.delete(self.path).raise_for_status()
         self.assertEqual(self.client.get("/api/parcels").json(), [])
 
+    def test_link_and_sync_county_boundary(self):
+        from fastapi import HTTPException
+        from server.app import sync_county
+
+        original = self.client.get(self.path + "/boundary.geojson").json()["geometry"]
+        selected = {"number": "sample", "geometry": original}
+        with patch("server.county.lookup", return_value=selected):
+            self.client.post(self.path + "/county-link", json={"number": "sample"}).raise_for_status()
+        pid = self.path.rsplit("/", 1)[1]
+        changed = {"type": "Polygon", "coordinates": [[[-99,35],[-99.2,35],[-99.2,35.1],[-99,35]]]}
+        with patch("server.county.lookup", return_value={**selected, "geometry": changed}):
+            sync_county(pid, self.email, "sample")
+        with patch("server.county.lookup", side_effect=HTTPException(503, "Unavailable")):
+            sync_county(pid, self.email, "sample")
+        self.assertEqual(self.client.get(self.path + "/boundary.geojson").json()["geometry"], changed)
+        source = self.client.get("/api/parcels").json()[0]["boundary_source"]
+        self.assertEqual(source["message"], "Unavailable")
+        self.assertEqual(source["previous_geometry"], original)
+
     def test_monitoring_and_reports(self):
         doc = BytesIO()
         with ZipFile(doc, "w") as f:
