@@ -434,10 +434,10 @@ def read_file(file):
 
 
 @app.post("/api/map/lease-preview")
-def lease_preview(file: UploadFile, email=Depends(user)):
+def lease_preview(file: UploadFile, allow_missing: bool = False, email=Depends(user)):
     raw = read_file(file)
     try:
-        return read_boundary(document_pages(file.filename.lower(), raw))
+        return read_boundary(document_pages(file.filename.lower(), raw), allow_missing) or {"geometry": None}
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:
@@ -445,21 +445,33 @@ def lease_preview(file: UploadFile, email=Depends(user)):
 
 
 @app.post("/api/parcels/from-lease")
-def create_from_lease(file: UploadFile, parcel: str = Form(...), email=Depends(user)):
+def create_from_lease(file: UploadFile, parcel: str = Form(...),
+                      boundary_method: Literal["exhibit", "draw", "county", "import"] = Form("exhibit"),
+                      number: str = Form(""), email=Depends(user)):
     raw = read_file(file)
     try:
         body = Parcel.model_validate_json(parcel)
         pages = document_pages(file.filename.lower(), raw)
-        preview = read_boundary(pages)
-        if not shape(preview["geometry"]).equals(shape(body.geometry)):
-            raise ValueError(
-                "The uploaded exhibit differs from the preview. Select the file again."
-            )
-        source = {k: v for k, v in preview.items() if k != "geometry"}
+        preview = read_boundary(pages, allow_missing=boundary_method != "exhibit")
+        if preview:
+            if boundary_method != "exhibit" or not shape(preview["geometry"]).equals(shape(body.geometry)):
+                raise ValueError("The uploaded exhibit differs from the preview. Select the file again.")
+            source = {k: v for k, v in preview.items() if k != "geometry"}
+        elif boundary_method == "county":
+            if not number.strip():
+                raise ValueError("Select a county parcel first.")
+            found = county.lookup(number=number)
+            if not shape(found["geometry"]).equals(shape(body.geometry)):
+                raise ValueError("The county boundary changed. Select the parcel again.")
+            source = {"provider": "Ada County", "number": found["number"], "checked": now().isoformat()}
+        else:
+            source = {"method": "User-drawn outline" if boundary_method == "draw" else "Imported boundary file"}
         source["filename"] = file.filename
         lease = dict(
             name=file.filename, time=now().isoformat(), clauses=extract_clauses(pages)
         )
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except Exception as exc:

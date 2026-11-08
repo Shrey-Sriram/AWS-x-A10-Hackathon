@@ -77,7 +77,7 @@ def candidates(text):
     yield from table_candidates(text)
 
 
-def read_boundary(pages):
+def read_boundary(pages, allow_missing=False):
     found = []
     for page, text in pages:
         for obj, method, excerpt in candidates(text):
@@ -90,6 +90,10 @@ def read_boundary(pages):
                 }
             )
     if not found:
+        if allow_missing and any(text.strip() for _, text in pages):
+            return None
+        if not any(text.strip() for _, text in pages):
+            raise ValueError("No readable text. Run OCR on the exhibit and upload it again.")
         raise ValueError(NO_BOUNDARY)
     if len(found) != 1:
         raise ValueError(

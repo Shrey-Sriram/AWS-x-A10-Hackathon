@@ -168,12 +168,19 @@ function initMap(id, items, heat = true) {
 }
 function newParcel() {
   modal(
-    '<h2>Add parcel</h2><form id="parcel"><label>Parcel name<input name="name" required maxlength="120"></label><div class="split"><label>Company<input name="company"></label><label>Renewal date<input type="date" name="renewal"></label></div><section class="exhibit-guide"><h3>Find your land</h3><label>Boundary method<select id="boundaryMode"><option value="county">Select a parcel on the map · Ada County, Idaho</option><option value="draw">Draw a boundary on the map</option></select></label><p id="mapHint">Click inside your property. Its county boundary will update automatically after you save.</p><div id="drawMap" class="map mini"></div><div class="actions"><button type="button" id="undo" hidden>Undo point</button><small id="points" role="status"></small></div></section><details><summary>Use a boundary file or lease exhibit</summary><section class="exhibit-guide"><h3>Upload a parcel boundary</h3><label>Choose a GeoJSON or KML file<input id="geo" type="file" accept=".geojson,.json,.kml"></label><small>For a real parcel, search your county GIS portal by parcel ID and export its boundary as GeoJSON or KML.</small><a class="link" href="/examples/idaho-demo.geojson" download="idaho-demo.geojson">Download a fictional Idaho sample (.geojson)</a></section><section class="exhibit-guide" aria-labelledby="exhibitHeading"><h3 id="exhibitHeading">Lease exhibit requirements</h3><div id="exhibitRequirements"><ul><li>Use a PDF or Word (.docx) file up to 10 MB with selectable text. Run OCR first if the exhibit is scanned.</li><li>Include one parcel boundary in WGS84 decimal degrees, either as embedded GeoJSON (Polygon or MultiPolygon) or as a coordinate table.</li><li>For a table, put “Boundary” immediately above columns labeled “Longitude” and “Latitude” in either order. List at least three distinct corners in perimeter order, one per row, without crossing sides. Keep the table together on one page.</li></ul><p>If the exhibit gives only an address, parcel ID, acreage, or survey bearings, import a boundary file or draw the outline below.</p></div><label>Read boundary from lease exhibit<input id="boundaryLease" type="file" accept=".pdf,.docx" aria-describedby="exhibitRequirements"></label></section></details><label>Buffer distance (meters)<input name="buffer_m" type="number" min="0" max="10000" value="0"></label><button class="primary">Save parcel</button></form>',
+    '<h2>Add parcel</h2><form id="parcel"><label>Parcel name<input name="name" required maxlength="120"></label><div class="split"><label>Company<input name="company"></label><label>Renewal date<input type="date" name="renewal"></label></div><section class="exhibit-guide"><h3>Find your land</h3><label>Boundary method<select id="boundaryMode"><option value="county">Select a parcel on the map · Ada County, Idaho</option><option value="draw">Draw a boundary on the map</option></select></label><p id="mapHint">Click inside your property. Its county boundary will update automatically after you save.</p><div id="drawMap" class="map mini"></div><div class="actions"><button type="button" id="undo" hidden>Undo point</button><small id="points" role="status"></small></div></section><details><summary>Use a boundary file or lease exhibit</summary><section class="exhibit-guide"><h3>Upload a parcel boundary</h3><label>Choose a GeoJSON or KML file<input id="geo" type="file" accept=".geojson,.json,.kml"></label><small>For a real parcel, search your county GIS portal by parcel ID and export its boundary as GeoJSON or KML.</small><a class="link" href="/examples/idaho-demo.geojson" download="idaho-demo.geojson">Download a fictional Idaho sample (.geojson)</a></section><section class="exhibit-guide" aria-labelledby="exhibitHeading"><h3 id="exhibitHeading">Lease exhibit requirements</h3><div id="exhibitRequirements"><ul><li>Use a PDF or Word (.docx) file up to 10 MB with selectable text. Run OCR first if the exhibit is scanned.</li><li>Coordinates are optional. To read an outline automatically, include one WGS84 GeoJSON polygon or a labeled coordinate table.</li><li>For a table, put “Boundary” immediately above columns labeled “Longitude” and “Latitude” in either order. List at least three distinct corners in perimeter order, one per row, without crossing sides. Keep the table together on one page.</li></ul><p>If the exhibit gives only an address, parcel ID, acreage, or survey bearings, keep the exhibit attached and select a county parcel, draw the leased area, or import an outline.</p></div><label>Attach lease exhibit<input id="boundaryLease" type="file" accept=".pdf,.docx" aria-describedby="exhibitRequirements"></label><small id="leaseStatus" role="status"></small></section></details><label>Buffer distance (meters)<input name="buffer_m" type="number" min="0" max="10000" value="0"></label><button class="primary">Save parcel</button></form>',
   );
   const m = initMap("drawMap", []),
     points = [];
   m.setView([43.629304, -116.323132], 16);
-  let countyNumber = null;
+  let countyNumber = null, unmappedLease = null;
+  function clearBoundaryInputs() {
+    $("geo").value = "";
+    if (!unmappedLease) {
+      $("boundaryLease").value = "";
+      $("leaseStatus").textContent = "";
+    }
+  }
   let layers = [],
     shapeLayer;
   const clean = () => {
@@ -189,7 +196,7 @@ function newParcel() {
   }
   $("boundaryMode").onchange = () => {
     resetSelection();
-    $("geo").value = $("boundaryLease").value = "";
+    clearBoundaryInputs();
     const draw = $("boundaryMode").value === "draw";
     $("undo").hidden = !draw;
     $("mapHint").textContent = draw ? "Click at least three corners in order." :
@@ -198,7 +205,7 @@ function newParcel() {
   m.on("click", async (e) => {
     if ($("boundaryMode").value === "county") {
       resetSelection();
-      $("geo").value = $("boundaryLease").value = "";
+      clearBoundaryInputs();
       const ticket = version;
       pending = true;
       $("points").textContent = "Finding county parcel…";
@@ -225,7 +232,7 @@ function newParcel() {
     version++;
     pending = false;
     leaseFile = null;
-    $("geo").value = $("boundaryLease").value = "";
+    clearBoundaryInputs();
     layers = [];
     points.push(e.latlng);
     paint();
@@ -234,7 +241,7 @@ function newParcel() {
     version++;
     pending = false;
     leaseFile = null;
-    $("geo").value = $("boundaryLease").value = "";
+    clearBoundaryInputs();
     layers = [];
     points.pop();
     paint();
@@ -252,6 +259,10 @@ function newParcel() {
     paint();
   }
   async function preview(file, kind) {
+    if (kind === "lease") {
+      unmappedLease = null;
+      $("leaseStatus").textContent = "";
+    }
     resetSelection();
     const ticket = version;
     if (!file) return;
@@ -261,10 +272,16 @@ function newParcel() {
     $("points").textContent = "Reading boundary…";
     try {
       const response = await api(
-        kind === "lease" ? "map/lease-preview" : "map/import",
+        kind === "lease" ? "map/lease-preview?allow_missing=true" : "map/import",
         fd,
       );
       if (ticket !== version || !$("dialog").open) return;
+      if (kind === "lease" && !response.geometry) {
+        unmappedLease = file;
+        $("leaseStatus").textContent = file.name + " is attached. Choose the leased area on the map or import its outline, then save.";
+        $("points").textContent = "No boundary coordinates in the exhibit.";
+        return;
+      }
       layers = kind === "lease" ? [{ geometry: response.geometry }] : response;
       leaseFile = kind === "lease" ? file : null;
       if (shapeLayer) m.removeLayer(shapeLayer);
@@ -286,7 +303,7 @@ function newParcel() {
     }
   }
   $("geo").onchange = (e) => {
-    $("boundaryLease").value = "";
+    if (!unmappedLease) $("boundaryLease").value = "";
     preview(e.target.files[0], "map");
   };
   $("boundaryLease").onchange = (e) => {
@@ -303,9 +320,13 @@ function newParcel() {
       : shapeLayer.toGeoJSON().geometry;
     data.layers = layers.slice(1);
     let p;
-    if (leaseFile) {
+    if (leaseFile || unmappedLease) {
       const fd = new FormData();
-      fd.set("file", leaseFile);
+      fd.set("file", leaseFile || unmappedLease);
+      if (unmappedLease) {
+        fd.set("boundary_method", countyNumber ? "county" : layers.length ? "import" : "draw");
+        if (countyNumber) fd.set("number", countyNumber);
+      }
       fd.set("parcel", JSON.stringify(data));
       p = await api("parcels/from-lease", fd);
     } else if (countyNumber) {

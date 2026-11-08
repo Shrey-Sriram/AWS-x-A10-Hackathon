@@ -262,6 +262,29 @@ class ParcelWorkflow(unittest.TestCase):
             self.assertEqual(attempt().status_code, 502)
             self.assertEqual(self.client.get(self.path + "/ai").json(), [])
 
+    def test_exhibit_without_coordinates_keeps_lease_and_selected_outline(self):
+        import json
+
+        raw = BytesIO()
+        with ZipFile(raw, "w") as f:
+            f.writestr("word/document.xml", "<document><p>Inspect the access road after heavy rain.</p></document>")
+        files = {"file": ("road.docx", raw.getvalue())}
+        preview = self.client.post("/api/map/lease-preview?allow_missing=true", files=files)
+        self.assertEqual(preview.json(), {"geometry": None})
+        g = self.client.get(self.path + "/boundary.geojson").json()["geometry"]
+        data = {"parcel": json.dumps({"name": "Road", "geometry": g})}
+        self.assertEqual(self.client.post("/api/parcels/from-lease", data=data, files=files).status_code, 422)
+        for method in ["draw", "import", "county"]:
+            with patch("server.county.lookup", return_value={"geometry": g, "number": "101"}):
+                res = self.client.post("/api/parcels/from-lease", files=files,
+                                       data={**data, "boundary_method": method, "number": "101"})
+            res.raise_for_status()
+            record = res.json()
+            self.assertEqual(record["leases"][0]["clauses"][0]["text"], "Inspect the access road after heavy rain.")
+            self.assertEqual(record["boundary_source"]["filename"], "road.docx")
+            if method == "county":
+                self.assertEqual(record["boundary_source"]["number"], "101")
+
     def test_lease_boundary_preview_and_atomic_save(self):
         import json
         from server.lease_boundary import read_boundary
