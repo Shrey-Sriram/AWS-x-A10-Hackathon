@@ -599,3 +599,8 @@ nav button {
   outline: 2px solid #3c654d;
   outline-offset: 2px;
 }
+
+.exhibit-guide { padding-block: 14px; border-block: 1px solid #cbd2c8; }
+.exhibit-guide ul { padding-left: 1.25em; margin: 0 0 8px; }
+.exhibit-guide li + li { margin-top: 4px; }
+#exhibitRequirements { font-size: 13px; line-height: 1.45; }
