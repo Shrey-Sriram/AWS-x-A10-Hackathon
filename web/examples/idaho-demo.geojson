@@ -1,0 +1,41 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Shrey’s Company – Idaho Demo Parcel",
+        "state": "Idaho",
+        "fictional": true,
+        "description": "Synthetic boundary for testing. No ownership claim."
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -116.645,
+              43.642
+            ],
+            [
+              -116.64,
+              43.642
+            ],
+            [
+              -116.64,
+              43.645
+            ],
+            [
+              -116.645,
+              43.645
+            ],
+            [
+              -116.645,
+              43.642
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}
